@@ -57,6 +57,29 @@ func run() error {
 		}()
 	}
 
+	if selfPingURL := os.Getenv("SELF_PING_URL"); selfPingURL != "" {
+		go func() {
+			logger.Info("starting keep-alive self-ping routine", "url", selfPingURL)
+			ticker := time.NewTicker(10 * time.Minute)
+			defer ticker.Stop()
+			client := &http.Client{Timeout: 10 * time.Second}
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					resp, err := client.Get(selfPingURL)
+					if err != nil {
+						logger.Warn("self-ping keep-alive failed", "url", selfPingURL, "error", err)
+					} else {
+						_ = resp.Body.Close()
+						logger.Info("self-ping keep-alive heartbeat sent", "url", selfPingURL, "status", resp.StatusCode)
+					}
+				}
+			}
+		}()
+	}
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           apihttp.NewRouter(pool, logger, cfg, authService),
