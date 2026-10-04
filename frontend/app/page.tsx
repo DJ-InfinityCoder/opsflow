@@ -220,10 +220,24 @@ function DashboardContent() {
     setSearchInput("")
   }
 
+  // When user switches, clear stale team or assignee filters that don't belong to the new user
+  React.useEffect(() => {
+    if (currentTeam && memberships.length > 0 && !memberships.some((m) => m.team_id === currentTeam)) {
+      updateFilter("team", null)
+    }
+  }, [user?.id, currentTeam, memberships, updateFilter])
+
+  React.useEffect(() => {
+    if (currentAssignee && user?.id && currentAssignee !== user.id) {
+      updateFilter("assignee", null)
+    }
+  }, [user?.id, currentAssignee, updateFilter])
+
   // 1. Live counts from GET /views/counts
   const { data: counts, isLoading: isLoadingCounts } = useQuery<ViewCounts>({
     queryKey: queryKeys.views.counts(),
     queryFn: () => apiFetch<ViewCounts>("/views/counts"),
+    enabled: !!user?.id,
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
   })
@@ -266,6 +280,7 @@ function DashboardContent() {
     },
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.next_cursor || undefined,
+    enabled: !!user?.id,
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
   })

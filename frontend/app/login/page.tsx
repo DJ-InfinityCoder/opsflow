@@ -80,14 +80,14 @@ export default function LoginPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 gap-2">
-              {demoUsers.slice(0, 4).map((u) => (
+            <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+              {demoUsers.map((u) => (
                 <button
                   key={u.id}
                   type="button"
                   onClick={() => handleLogin(u.email)}
                   disabled={isSubmitting}
-                  className="flex w-full items-center justify-between rounded-sm border border-border bg-muted/20 p-2.5 text-left text-xs transition-colors hover:bg-muted/60 hover:border-foreground/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="flex w-full items-center justify-between rounded-sm border border-border bg-muted/20 p-2 text-left text-xs transition-colors hover:bg-muted/60 hover:border-foreground/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="flex size-7 items-center justify-center rounded-sm bg-secondary text-foreground">

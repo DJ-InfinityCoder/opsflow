@@ -12,6 +12,8 @@ interface AuthContextValue {
   activeTeam: Membership | null
   setActiveTeam: (team: Membership | null) => void
   isLoading: boolean
+  isSwitchingUser: boolean
+  switchingToEmail: string | null
   isAuthenticated: boolean
   demoUsers: User[]
   isLoadingDemoUsers: boolean
@@ -33,6 +35,9 @@ const FALLBACK_DEMO_USERS: User[] = [
   { id: "demo-priya", email: "priya@opsflow.local", name: "Priya", is_system_admin: false },
   { id: "demo-noah", email: "noah@opsflow.local", name: "Noah", is_system_admin: false },
   { id: "demo-elena", email: "elena@opsflow.local", name: "Elena", is_system_admin: false },
+  { id: "demo-jonas", email: "jonas@opsflow.local", name: "Jonas", is_system_admin: false },
+  { id: "demo-nina", email: "nina@opsflow.local", name: "Nina", is_system_admin: false },
+  { id: "demo-omar", email: "omar@opsflow.local", name: "Omar", is_system_admin: false },
 ]
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -93,16 +98,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const [isSwitchingUser, setIsSwitchingUser] = React.useState(false)
+  const [switchingToEmail, setSwitchingToEmail] = React.useState<string | null>(null)
+
   const loginAs = React.useCallback(
     async (email: string) => {
-      const res = await apiFetch<DevLoginResponse>("/auth/dev-login", {
-        method: "POST",
-        body: { email },
-        skipAuth: true,
-      })
-      setAuthToken(res.access_token)
-      setTokenState(res.access_token)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() })
+      try {
+        setIsSwitchingUser(true)
+        setSwitchingToEmail(email)
+        const res = await apiFetch<DevLoginResponse>("/auth/dev-login", {
+          method: "POST",
+          body: { email },
+          skipAuth: true,
+        })
+        setAuthToken(res.access_token)
+        setTokenState(res.access_token)
+
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.removeItem(ACTIVE_TEAM_KEY)
+          } catch {
+            // storage disabled
+          }
+        }
+        setActiveTeamIdState(null)
+
+        // 1. Wipe all stale query caches immediately
+        queryClient.clear()
+
+        // 2. Fetch the new user's profile and memberships immediately
+        const me = await apiFetch<MeResponse>("/me")
+        queryClient.setQueryData(queryKeys.auth.me(), me)
+
+        // 3. Immediately trigger invalidations/refetches for active views
+        await Promise.allSettled([
+          queryClient.invalidateQueries({ queryKey: queryKeys.views.all }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.feed.all }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all }),
+        ])
+      } finally {
+        setIsSwitchingUser(false)
+        setSwitchingToEmail(null)
+      }
     },
     [queryClient]
   )
@@ -111,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthToken(null)
     setTokenState(null)
     setActiveTeam(null)
-    queryClient.removeQueries()
+    queryClient.clear()
   }, [queryClient, setActiveTeam])
 
   const isSystemAdmin = !!user?.is_system_admin
@@ -126,6 +165,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       activeTeam,
       setActiveTeam,
       isLoading: !!token && isLoadingMe,
+      isSwitchingUser,
+      switchingToEmail,
       isAuthenticated: !!user,
       demoUsers:
         demoUsersData?.users && demoUsersData.users.length > 0
@@ -146,6 +187,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setActiveTeam,
       token,
       isLoadingMe,
+      isSwitchingUser,
+      switchingToEmail,
       demoUsersData?.users,
       isLoadingDemoUsers,
       loginAs,

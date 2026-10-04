@@ -122,7 +122,7 @@ func run() error {
 
 	for _, teamName := range teamNames {
 		teamID := teamIDs[teamName]
-		for _, email := range []string{"alicia@opsflow.local", "marcus@opsflow.local", "priya@opsflow.local", "noah@opsflow.local", "elena@opsflow.local"} {
+		for _, email := range []string{"alicia@opsflow.local", "marcus@opsflow.local", "priya@opsflow.local", "noah@opsflow.local", "elena@opsflow.local", "jonas@opsflow.local", "nina@opsflow.local", "omar@opsflow.local"} {
 			userID := userIDs[email]
 			if userID == "" {
 				continue
