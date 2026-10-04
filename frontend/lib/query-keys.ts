@@ -45,6 +45,7 @@ export const queryKeys = {
   },
   analytics: {
     all: ["analytics"] as const,
+    teams: () => [...queryKeys.analytics.all, "teams"] as const,
     summary: (teamId?: string) => [...queryKeys.analytics.all, "summary", { teamId }] as const,
     workload: (teamId?: string) => [...queryKeys.analytics.all, "workload", { teamId }] as const,
     aging: (teamId?: string) => [...queryKeys.analytics.all, "aging", { teamId }] as const,

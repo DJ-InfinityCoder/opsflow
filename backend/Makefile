@@ -1,5 +1,7 @@
 .PHONY: migrate migrate-down seed run worker test lint
 
+ARGS ?=
+
 migrate:
 	go run ./cmd/migrate up
 
@@ -7,7 +9,7 @@ migrate-down:
 	go run ./cmd/migrate down
 
 seed: migrate
-	@echo "No seed data is defined until the domain schema is added."
+	go run ./cmd/seed $(ARGS)
 
 run:
 	go run ./cmd/api

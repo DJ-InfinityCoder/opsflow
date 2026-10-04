@@ -140,6 +140,7 @@ export interface Notification {
 export interface NotificationPage {
   notifications: Notification[]
   next_cursor?: string
+  unread_count?: number
 }
 
 export interface AnalyticsSummary {
@@ -148,9 +149,16 @@ export interface AnalyticsSummary {
   open_items: number
   by_status: Record<string, number>
   by_priority: Record<string | number, number>
+  aging_buckets: Record<string, number>
   sla_breached_count: number
   sla_warning_count: number
   mttr_seconds: number
+}
+
+export interface AnalyticsTeamMetric {
+  team_id: string
+  team_name: string
+  sla_breached_count: number
 }
 
 export interface FeedEvent {

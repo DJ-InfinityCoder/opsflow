@@ -50,6 +50,11 @@ export default function ActivityFeedPage() {
   const { memberships } = useAuth()
   const [selectedTeam, setSelectedTeam] = React.useState<string>("all")
 
+  const selectedTeamLabel =
+    selectedTeam === "all"
+      ? "All Accessible Teams"
+      : memberships.find((m) => m.team_id === selectedTeam)?.team_name || "Team"
+
   // Infinite query for feed events
   const {
     data,
@@ -73,6 +78,23 @@ export default function ActivityFeedPage() {
   const allEvents: FeedEvent[] = React.useMemo(() => {
     return data?.pages.flatMap((page) => page.events) || []
   }, [data])
+
+  const loadMoreRef = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    const target = loadMoreRef.current
+    if (!target || !hasNextPage) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting) && !isFetchingNextPage) {
+          void fetchNextPage()
+        }
+      },
+      { rootMargin: "240px" }
+    )
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage])
 
   const getEventIcon = (type: string) => {
     switch (type) {
@@ -136,7 +158,7 @@ export default function ActivityFeedPage() {
             >
               <SelectTrigger className="w-48 h-9 text-xs">
                 <Building2 className="size-3.5 mr-1 text-muted-foreground" />
-                <SelectValue placeholder="All teams" />
+                <SelectValue placeholder="All teams">{selectedTeamLabel}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Accessible Teams</SelectItem>
@@ -202,7 +224,7 @@ export default function ActivityFeedPage() {
                   {/* Actor Avatar */}
                   <Avatar className="size-8 border shrink-0 mt-0.5">
                     <AvatarFallback className="text-[11px] font-bold bg-primary/10 text-primary">
-                      {ev.actor_name ? ev.actor_name.slice(0, 2).toUpperCase() : "OP"}
+                      {ev.actor_name ? ev.actor_name.trim().charAt(0).toUpperCase() : "O"}
                     </AvatarFallback>
                   </Avatar>
 
@@ -258,6 +280,7 @@ export default function ActivityFeedPage() {
           {/* Infinite Scroll Load More Button */}
           {hasNextPage && (
             <div className="p-4 border-t text-center bg-muted/20">
+              <div ref={loadMoreRef} aria-hidden="true" className="h-px" />
               <Button
                 variant="outline"
                 size="sm"

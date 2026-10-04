@@ -107,6 +107,18 @@ func (r *NotificationRepository) List(ctx context.Context, userID string, unread
 	return notifs, rows.Err()
 }
 
+func (r *NotificationRepository) CountUnread(ctx context.Context, userID string) (int, error) {
+	var count int
+	if err := r.db.QueryRow(ctx, `
+		SELECT count(*)
+		FROM notifications
+		WHERE user_id = $1::uuid AND read_at IS NULL
+	`, userID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count unread notifications: %w", err)
+	}
+	return count, nil
+}
+
 func (r *NotificationRepository) MarkRead(ctx context.Context, userID string, ids []string) (int64, error) {
 	if len(ids) == 0 {
 		tag, err := r.db.Exec(ctx, `

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { z } from "zod"
 import { useAuth } from "@/providers/auth-provider"
 import { apiFetch, ApiError } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
@@ -36,6 +37,81 @@ interface NewItemDialogProps {
   defaultTeamId?: string
 }
 
+function createItemSchema(schemas: TeamFieldSchema[]) {
+  return z.object({
+    team_id: z.string().min(1, "Please select a team"),
+    title: z.string().trim().min(1, "Title is required").max(500, "Title must be at most 500 characters"),
+    description: z.string().max(30000, "Description must be at most 30000 characters"),
+    priority: z.number().int().min(1).max(4),
+    custom_fields: z.record(z.string(), z.unknown()),
+  }).superRefine(({ custom_fields }, ctx) => {
+    for (const schema of schemas) {
+      const value = custom_fields[schema.field_key]
+      const fieldPath = ["custom_fields", schema.field_key]
+      if (schema.required && (value === undefined || value === null)) {
+        ctx.addIssue({ code: "custom", path: fieldPath, message: `${schema.label} is required` })
+        continue
+      }
+      if (value === undefined || value === null) continue
+
+      const type = schema.type.toLowerCase()
+      const options = Array.isArray(schema.options)
+        ? schema.options.filter((option): option is string => typeof option === "string")
+        : []
+      let valid = false
+      switch (type) {
+        case "text":
+        case "string":
+          valid = typeof value === "string"
+          break
+        case "number":
+          valid = typeof value === "number" && Number.isFinite(value)
+          break
+        case "integer":
+          valid = typeof value === "number" && Number.isInteger(value)
+          break
+        case "boolean":
+          valid = typeof value === "boolean"
+          break
+        case "date":
+          if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            const parsedDate = new Date(`${value}T00:00:00Z`)
+            valid = !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === value
+          }
+          break
+        case "email":
+          valid = typeof value === "string" && z.email().safeParse(value).success
+          break
+        case "url":
+          if (typeof value === "string") {
+            try {
+              const url = new URL(value)
+              valid = (url.protocol === "http:" || url.protocol === "https:") && !!url.hostname
+            } catch {
+              valid = false
+            }
+          }
+          break
+        case "select":
+          valid = typeof value === "string" && options.includes(value)
+          break
+        case "multi_select":
+          valid = Array.isArray(value) && value.length > 0 && value.every(
+            (option) => typeof option === "string" && options.includes(option)
+          )
+          break
+      }
+      if (!valid) {
+        ctx.addIssue({
+          code: "custom",
+          path: fieldPath,
+          message: `${schema.label} has an invalid value for ${schema.type}`,
+        })
+      }
+    }
+  })
+}
+
 export function NewItemDialog({
   open,
   onOpenChange,
@@ -53,6 +129,17 @@ export function NewItemDialog({
 
   const [teamId, setTeamId] = React.useState<string>("")
   const effectiveTeamId = teamId || initialTeam
+
+  const teamItems = React.useMemo(() => {
+    return memberships.map((m) => ({
+      value: m.team_id,
+      label: `${m.team_name} (${m.role})`,
+    }))
+  }, [memberships])
+
+  const selectedTeamMembership = React.useMemo(() => {
+    return memberships.find((m) => m.team_id === effectiveTeamId)
+  }, [memberships, effectiveTeamId])
 
   const [title, setTitle] = React.useState("")
   const [description, setDescription] = React.useState("")
@@ -138,56 +225,30 @@ export function NewItemDialog({
     },
   })
 
-  // Client validation mirroring server rules
+  // Validate against the same field definitions used by the server.
   const validateForm = (): boolean => {
+    const result = createItemSchema(schemas).safeParse({
+      team_id: effectiveTeamId,
+      title,
+      description,
+      priority: Number(priority),
+      custom_fields: customFields,
+    })
+    if (result.success) {
+      setErrors({})
+      return true
+    }
+
     const newErrors: Record<string, string> = {}
-
-    if (!effectiveTeamId) {
-      newErrors.team_id = "Please select a team"
+    for (const issue of result.error.issues) {
+      const [root, field] = issue.path
+      const key = root === "custom_fields" && typeof field === "string"
+        ? field
+        : String(root ?? "form")
+      newErrors[key] ??= issue.message
     }
-    if (!title.trim()) {
-      newErrors.title = "Title is required"
-    } else if (title.trim().length > 500) {
-      newErrors.title = "Title must be at most 500 characters"
-    }
-    if (description.length > 30000) {
-      newErrors.description = "Description must be at most 30000 characters"
-    }
-    if (![1, 2, 3, 4].includes(Number(priority))) {
-      newErrors.priority = "Priority must be between 1 (P1) and 4 (P4)"
-    }
-
-    // Dynamic schema validation
-    for (const schema of schemas) {
-      const val = customFields[schema.field_key]
-      if (schema.required) {
-        if (val === undefined || val === null || val === "") {
-          newErrors[schema.field_key] = `${schema.label} is required`
-          continue
-        }
-      }
-      if (val !== undefined && val !== null && val !== "") {
-        const typeLower = schema.type.toLowerCase()
-        if (typeLower === "number" || typeLower === "integer") {
-          if (isNaN(Number(val))) {
-            newErrors[schema.field_key] = `${schema.label} must be a number`
-          }
-        } else if (typeLower === "email") {
-          if (typeof val !== "string" || !val.includes("@") || !val.includes(".")) {
-            newErrors[schema.field_key] = `${schema.label} must be a valid email`
-          }
-        } else if (typeLower === "url") {
-          try {
-            new URL(String(val))
-          } catch {
-            newErrors[schema.field_key] = `${schema.label} must be a valid URL (http/https)`
-          }
-        }
-      }
-    }
-
     setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    return false
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -226,6 +287,7 @@ export function NewItemDialog({
               </p>
             ) : (
               <Select
+                items={teamItems}
                 value={effectiveTeamId}
                 onValueChange={(val) => {
                   setTeamId(val ?? "")
@@ -234,7 +296,11 @@ export function NewItemDialog({
                 }}
               >
                 <SelectTrigger className={errors.team_id ? "border-destructive" : ""}>
-                  <SelectValue placeholder="Select a team" />
+                  <SelectValue placeholder="Select a team">
+                    {selectedTeamMembership
+                      ? `${selectedTeamMembership.team_name} (${selectedTeamMembership.role})`
+                      : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {memberships.map((m) => (
@@ -406,8 +472,11 @@ export function NewItemDialog({
                             Enable / Yes
                           </label>
                         </div>
-                      ) : typeLower === "select" && Array.isArray(schema.options) ? (
+                      ) : typeLower === "select" ? (
                         <Select
+                          items={(Array.isArray(schema.options) ? schema.options : [])
+                            .filter((opt): opt is string => typeof opt === "string")
+                            .map((opt) => ({ value: opt, label: opt }))}
                           value={String(val ?? "")}
                           onValueChange={(opt) => {
                             setCustomFields((prev) => ({
@@ -418,16 +487,50 @@ export function NewItemDialog({
                           }}
                         >
                           <SelectTrigger className={fieldErr ? "border-destructive" : ""}>
-                            <SelectValue placeholder={`Select ${schema.label}`} />
+                            <SelectValue placeholder={`Select ${schema.label}`}>
+                              {val ? String(val) : undefined}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {(schema.options as string[]).map((opt) => (
+                            {(Array.isArray(schema.options) ? schema.options : [])
+                              .filter((opt): opt is string => typeof opt === "string")
+                              .map((opt) => (
                               <SelectItem key={opt} value={opt}>
                                 {opt}
                               </SelectItem>
-                            ))}
+                              ))}
                           </SelectContent>
                         </Select>
+                      ) : typeLower === "multi_select" ? (
+                        <div role="group" aria-label={schema.label} className="space-y-2">
+                          {(Array.isArray(schema.options) ? schema.options : [])
+                            .filter((option): option is string => typeof option === "string")
+                            .map((option) => {
+                              const selected = Array.isArray(val) && val.includes(option)
+                              return (
+                                <label key={option} className="flex items-center gap-2 text-xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    onChange={(event) => {
+                                      setCustomFields((prev) => {
+                                        const current = Array.isArray(prev[schema.field_key])
+                                          ? prev[schema.field_key] as string[]
+                                          : []
+                                        const next = event.target.checked
+                                          ? [...current, option]
+                                          : current.filter((value) => value !== option)
+                                        return { ...prev, [schema.field_key]: next.length ? next : undefined }
+                                      })
+                                      handleInputChange()
+                                    }}
+                                    className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                  />
+                                  {option}
+                                </label>
+                              )
+                            })}
+                        </div>
                       ) : (
                         <Input
                           type={

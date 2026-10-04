@@ -6,21 +6,27 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import {
   useInfiniteQuery,
   useQuery,
-  useMutation,
   useQueryClient,
-  type InfiniteData,
 } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useAuth } from "@/providers/auth-provider"
-import { apiFetch, ApiError } from "@/lib/api"
+import { apiFetch } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
-import type { WorkItem, ItemListResult, ViewCounts } from "@/types"
+import type { ItemListResult, ViewCounts } from "@/types"
+import { useClaimWorkItem } from "@/hooks/use-claim-work-item"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
-import { toast } from "sonner"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Search,
   RefreshCw,
@@ -32,6 +38,10 @@ import {
   User as UserIcon,
   Loader2,
   Building2,
+  ChevronDown,
+  Check,
+  CircleDot,
+  SlidersHorizontal,
 } from "lucide-react"
 
 function formatRelativeTime(dateString: string): string {
@@ -277,99 +287,7 @@ function DashboardContent() {
     overscan: 6,
   })
 
-  // Claim mutation with optimistic update
-  const claimMutation = useMutation({
-    mutationFn: async (item: WorkItem) => {
-      const idempotencyKey = crypto.randomUUID()
-      return apiFetch<WorkItem>(`/items/${item.id}/claim`, {
-        method: "POST",
-        body: {},
-        idempotencyKey,
-      })
-    },
-    onMutate: async (item: WorkItem) => {
-      await queryClient.cancelQueries({ queryKey: activeQueryKey })
-      await queryClient.cancelQueries({ queryKey: queryKeys.views.counts() })
-
-      const previousData = queryClient.getQueryData<InfiniteData<ItemListResult>>(activeQueryKey)
-
-      // Optimistically update item in cache
-      queryClient.setQueryData<InfiniteData<ItemListResult>>(
-        activeQueryKey,
-        (old) => {
-          if (!old) return old
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              items: page.items.map((row) =>
-                row.id === item.id
-                  ? {
-                      ...row,
-                      assignee_id: user?.id ?? "me",
-                      assignee_name: user?.name ?? "Me",
-                      status: "in_progress",
-                      version: row.version + 1,
-                    }
-                  : row
-              ),
-            })),
-          }
-        }
-      )
-
-      return { previousData }
-    },
-    onError: (err, item, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(activeQueryKey, context.previousData)
-      }
-
-      if (err instanceof ApiError && (err.status === 409 || err.code === "already_claimed")) {
-        const winner = err.details?.winner as { assignee_id?: string } | undefined
-        const winnerId = winner?.assignee_id || "Another operator"
-        toast.error(`${winnerId} claimed this just now`)
-
-        const serverItem = err.details?.current_item as WorkItem | undefined
-        if (serverItem) {
-          queryClient.setQueryData<InfiniteData<ItemListResult>>(
-            activeQueryKey,
-            (old) => {
-              if (!old) return old
-              return {
-                ...old,
-                pages: old.pages.map((page) => ({
-                  ...page,
-                  items: page.items.map((row) => (row.id === serverItem.id ? serverItem : row)),
-                })),
-              }
-            }
-          )
-        } else {
-          queryClient.invalidateQueries({ queryKey: activeQueryKey })
-        }
-      } else {
-        toast.error(err instanceof Error ? err.message : "Failed to claim item")
-      }
-    },
-    onSuccess: (updatedItem) => {
-      toast.success("Item claimed successfully")
-      queryClient.setQueryData<InfiniteData<ItemListResult>>(
-        activeQueryKey,
-        (old) => {
-          if (!old) return old
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              items: page.items.map((row) => (row.id === updatedItem.id ? updatedItem : row)),
-            })),
-          }
-        }
-      )
-      queryClient.invalidateQueries({ queryKey: queryKeys.views.counts() })
-    },
-  })
+  const claimMutation = useClaimWorkItem(activeQueryKey, user)
 
   // Tabs configuration
   const tabs = [
@@ -387,6 +305,27 @@ function DashboardContent() {
     currentAssignee !== "" ||
     currentQ !== ""
 
+  const STATUS_OPTIONS = [
+    { value: "", label: "All Statuses" },
+    { value: "new", label: "New", color: "bg-sky-500" },
+    { value: "triaged", label: "Triaged", color: "bg-purple-500" },
+    { value: "in_progress", label: "In Progress", color: "bg-amber-500" },
+    { value: "pending_approval", label: "Pending Approval", color: "bg-orange-500" },
+    { value: "resolved", label: "Resolved", color: "bg-emerald-500" },
+    { value: "closed", label: "Closed", color: "bg-zinc-500" },
+  ]
+  const selectedStatus = STATUS_OPTIONS.find((s) => s.value === currentStatus)
+
+  const PRIORITY_OPTIONS = [
+    { value: "", label: "All Priorities" },
+    { value: "1", label: "P1 Critical", color: "bg-red-500" },
+    { value: "2", label: "P2 High", color: "bg-amber-500" },
+    { value: "3", label: "P3 Medium", color: "bg-blue-500" },
+    { value: "4", label: "P4 Low", color: "bg-zinc-500" },
+  ]
+  const selectedPriority = PRIORITY_OPTIONS.find((p) => p.value === currentPriority)
+  const selectedTeam = memberships.find((m) => m.team_id === currentTeam)
+
   return (
     <div className="flex h-full flex-col gap-4">
       {/* Header and View Tabs */}
@@ -397,39 +336,40 @@ function DashboardContent() {
               Work Items
             </h1>
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon-xs"
+              className="size-7 rounded-sm border border-border bg-background hover:bg-accent text-foreground shadow-none"
               onClick={() => {
                 refetch()
                 queryClient.invalidateQueries({ queryKey: queryKeys.views.counts() })
               }}
               title="Refresh live list"
             >
-              <RefreshCw className="size-3.5 text-muted-foreground" />
+              <RefreshCw className="size-3.5" />
             </Button>
           </div>
         </div>
 
         {/* Tab Selector */}
-        <div className="flex overflow-x-auto border-b pb-px scrollbar-none">
-          <div className="flex gap-1">
+        <div className="flex overflow-x-auto pb-1 scrollbar-none">
+          <div className="inline-flex items-center gap-1 rounded-sm border border-border bg-muted/30 p-1">
             {tabs.map((tab) => {
               const isActive = currentView === tab.id
               return (
                 <button
                   key={tab.id}
                   onClick={() => updateFilter("view", tab.id === "all" ? null : tab.id)}
-                  className={`inline-flex items-center gap-2 border-b-2 px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors ${
+                  className={`inline-flex items-center gap-2 rounded-sm px-3 py-1.5 text-xs transition-all ${
                     isActive
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                      ? "bg-background text-foreground font-semibold border border-border shadow-none"
+                      : "text-muted-foreground hover:text-foreground hover:bg-background/40 border border-transparent font-medium"
                   }`}
                 >
                   <span>{tab.label}</span>
                   <span
-                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                    className={`rounded-sm px-1.5 py-0.5 text-[10px] font-mono ${
                       isActive
-                        ? "bg-primary/15 text-primary"
+                        ? "bg-primary/10 text-primary font-bold"
                         : "bg-muted text-muted-foreground"
                     }`}
                   >
@@ -442,90 +382,169 @@ function DashboardContent() {
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card/60 p-2.5 shadow-2xs backdrop-blur-sm">
+      {/* Filter Bar with shadcn DropdownMenu */}
+      <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border bg-card p-2.5 shadow-none">
         {/* Search Input */}
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <Input
             placeholder="Search items by title or description..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="h-9 pl-8 text-xs bg-background/80"
+            className="h-8 pl-8 text-xs bg-background border border-border rounded-sm shadow-none"
           />
         </div>
 
-        {/* Team Filter */}
-        <div className="flex items-center">
-          <select
-            value={currentTeam}
-            onChange={(e) => updateFilter("team", e.target.value)}
-            aria-label="Filter by Team"
-            className="h-9 rounded-md border border-input bg-background/80 px-2.5 py-1 text-xs shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        {/* Team Filter Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs font-normal border border-border bg-background hover:bg-accent justify-between rounded-sm shadow-none"
+              />
+            }
           >
-            <option value="">All Teams</option>
+            <Building2 className="size-3.5 text-muted-foreground" />
+            <span className="truncate max-w-[120px]">
+              {selectedTeam ? selectedTeam.team_name : "All Teams"}
+            </span>
+            <ChevronDown className="size-3 opacity-50 ml-0.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52 border border-border bg-popover shadow-none rounded-md">
+            <DropdownMenuLabel>Filter by Team</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => updateFilter("team", "")}
+              className="text-xs justify-between cursor-pointer"
+            >
+              <span>All Teams</span>
+              {!currentTeam && <Check className="size-3.5 text-primary" />}
+            </DropdownMenuItem>
             {memberships.map((m) => (
-              <option key={m.team_id} value={m.team_id}>
-                {m.team_name}
-              </option>
+              <DropdownMenuItem
+                key={m.team_id}
+                onClick={() => updateFilter("team", m.team_id)}
+                className="text-xs justify-between cursor-pointer"
+              >
+                <span className="truncate">{m.team_name}</span>
+                {currentTeam === m.team_id && <Check className="size-3.5 text-primary" />}
+              </DropdownMenuItem>
             ))}
-          </select>
-        </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        {/* Status Filter */}
-        <div className="flex items-center">
-          <select
-            value={currentStatus}
-            onChange={(e) => updateFilter("status", e.target.value)}
-            aria-label="Filter by Status"
-            className="h-9 rounded-md border border-input bg-background/80 px-2.5 py-1 text-xs shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        {/* Status Filter Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs font-normal border border-border bg-background hover:bg-accent justify-between rounded-sm shadow-none"
+              />
+            }
           >
-            <option value="">All Statuses</option>
-            <option value="new">New</option>
-            <option value="triaged">Triaged</option>
-            <option value="in_progress">In Progress</option>
-            <option value="pending_approval">Pending Approval</option>
-            <option value="resolved">Resolved</option>
-            <option value="closed">Closed</option>
-          </select>
-        </div>
+            <CircleDot className="size-3.5 text-muted-foreground" />
+            <span>{selectedStatus?.label || "All Statuses"}</span>
+            <ChevronDown className="size-3 opacity-50 ml-0.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48 border border-border bg-popover shadow-none rounded-md">
+            <DropdownMenuLabel>Filter by Status</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {STATUS_OPTIONS.map((opt) => (
+              <DropdownMenuItem
+                key={opt.value}
+                onClick={() => updateFilter("status", opt.value)}
+                className="text-xs justify-between cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  {opt.color && <span className={`size-2 rounded-full ${opt.color}`} />}
+                  <span>{opt.label}</span>
+                </div>
+                {(currentStatus || "") === opt.value && <Check className="size-3.5 text-primary" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        {/* Priority Filter */}
-        <div className="flex items-center">
-          <select
-            value={currentPriority}
-            onChange={(e) => updateFilter("priority", e.target.value)}
-            aria-label="Filter by Priority"
-            className="h-9 rounded-md border border-input bg-background/80 px-2.5 py-1 text-xs shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        {/* Priority Filter Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs font-normal border border-border bg-background hover:bg-accent justify-between rounded-sm shadow-none"
+              />
+            }
           >
-            <option value="">All Priorities</option>
-            <option value="1">P1 Critical</option>
-            <option value="2">P2 High</option>
-            <option value="3">P3 Medium</option>
-            <option value="4">P4 Low</option>
-          </select>
-        </div>
+            <SlidersHorizontal className="size-3.5 text-muted-foreground" />
+            <span>{selectedPriority?.label || "All Priorities"}</span>
+            <ChevronDown className="size-3 opacity-50 ml-0.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-44 border border-border bg-popover shadow-none rounded-md">
+            <DropdownMenuLabel>Filter by Priority</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {PRIORITY_OPTIONS.map((opt) => (
+              <DropdownMenuItem
+                key={opt.value}
+                onClick={() => updateFilter("priority", opt.value)}
+                className="text-xs justify-between cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  {opt.color && <span className={`size-2 rounded-full ${opt.color}`} />}
+                  <span>{opt.label}</span>
+                </div>
+                {(currentPriority || "") === opt.value && <Check className="size-3.5 text-primary" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        {/* Assignee Filter */}
-        <div className="flex items-center">
-          <select
-            value={currentAssignee}
-            onChange={(e) => updateFilter("assignee", e.target.value)}
-            aria-label="Filter by Assignee"
-            className="h-9 rounded-md border border-input bg-background/80 px-2.5 py-1 text-xs shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        {/* Assignee Filter Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs font-normal border border-border bg-background hover:bg-accent justify-between rounded-sm shadow-none"
+              />
+            }
           >
-            <option value="">All Assignees</option>
-            <option value="me">Assigned to Me</option>
-          </select>
-        </div>
+            <UserIcon className="size-3.5 text-muted-foreground" />
+            <span>{currentAssignee === "me" ? "Assigned to Me" : "All Assignees"}</span>
+            <ChevronDown className="size-3 opacity-50 ml-0.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-44 border border-border bg-popover shadow-none rounded-md">
+            <DropdownMenuLabel>Filter by Assignee</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => updateFilter("assignee", "")}
+              className="text-xs justify-between cursor-pointer"
+            >
+              <span>All Assignees</span>
+              {!currentAssignee && <Check className="size-3.5 text-primary" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => updateFilter("assignee", "me")}
+              className="text-xs justify-between cursor-pointer"
+            >
+              <span>Assigned to Me</span>
+              {currentAssignee === "me" && <Check className="size-3.5 text-primary" />}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Clear Filters Button */}
         {hasActiveFilters && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={clearAllFilters}
-            className="h-9 text-xs gap-1 text-muted-foreground hover:text-foreground"
+            className="h-8 text-xs gap-1 border border-dashed border-border bg-background hover:bg-accent text-muted-foreground hover:text-foreground rounded-sm shadow-none"
           >
             <FilterX className="size-3.5" />
             <span>Reset</span>
@@ -534,7 +553,17 @@ function DashboardContent() {
       </div>
 
       {/* Main List Area */}
-      <div className="flex-1 min-h-[450px] rounded-lg border bg-card shadow-2xs overflow-hidden flex flex-col">
+      <div className="flex-1 min-h-[480px] rounded-sm border border-border bg-card shadow-none overflow-hidden flex flex-col">
+        {/* Table Column Header */}
+        <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider select-none shrink-0">
+          <div className="flex-1">Work Item Details</div>
+          <div className="hidden sm:flex items-center gap-4 justify-end text-right">
+            <span className="w-24 text-center">SLA</span>
+            <span className="w-24 text-center">Status</span>
+            <span className="w-20 text-center">Assignee</span>
+            <span className="w-16 text-center">Action</span>
+          </div>
+        </div>
         {isLoading ? (
           // Loading Skeleton
           <div className="p-4 space-y-3">
@@ -660,7 +689,7 @@ function DashboardContent() {
                       width: "100%",
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 px-4 gap-2.5 transition-colors hover:bg-muted/40"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 px-4 gap-2.5 transition-colors hover:bg-muted/40 border-b border-border/80 bg-card"
                   >
                     {/* Item Information */}
                     <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -671,23 +700,22 @@ function DashboardContent() {
                         <div className="flex items-center gap-2">
                           <Link
                             href={`/items/${item.id}`}
-                            className="font-semibold text-sm text-foreground truncate hover:text-primary hover:underline underline-offset-2 transition-colors"
+                            className="font-semibold text-xs sm:text-sm text-foreground truncate hover:text-primary hover:underline underline-offset-2 transition-colors"
                           >
                             {item.title}
                           </Link>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                          {item.team_name ? (
-                            <span className="flex items-center gap-1 font-medium">
-                              <Building2 className="size-3" />
-                              {item.team_name}
-                            </span>
-                          ) : (
-                            <span className="font-mono text-[10px]">
-                              {item.team_id.slice(0, 8)}
-                            </span>
-                          )}
+                          {(() => {
+                            const name = item.team_name || memberships.find((m) => m.team_id === item.team_id)?.team_name
+                            return (
+                              <span className="flex items-center gap-1 font-medium text-foreground/80">
+                                <Building2 className="size-3 text-muted-foreground" />
+                                {name || "Operations"}
+                              </span>
+                            )
+                          })()}
                           <span>•</span>
                           <span>Updated {formatRelativeTime(item.updated_at)}</span>
                           {item.due_at && (
@@ -701,52 +729,58 @@ function DashboardContent() {
                     </div>
 
                     {/* Metadata & Actions */}
-                    <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0 pt-1 sm:pt-0">
+                    <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pt-1 sm:pt-0">
                       {/* SLA Badge */}
-                      {getSlaBadge(item.sla_state)}
+                      <div className="sm:w-24 flex sm:justify-center">
+                        {getSlaBadge(item.sla_state)}
+                      </div>
 
                       {/* Status Badge */}
-                      {getStatusBadge(item.status)}
+                      <div className="sm:w-24 flex sm:justify-center">
+                        {getStatusBadge(item.status)}
+                      </div>
 
                       {/* Assignee Avatar */}
-                      <div className="flex items-center">
+                      <div className="sm:w-20 flex sm:justify-center">
                         {item.assignee_id ? (
                           <div
                             className="flex items-center gap-1.5"
                             title={`Assigned to ${item.assignee_name || item.assignee_id}`}
                           >
-                            <Avatar className="size-6 border">
+                            <Avatar className="size-6 border border-border">
                               <AvatarFallback className="text-[10px] font-bold bg-primary/10 text-primary">
                                 {item.assignee_name
-                                  ? item.assignee_name.slice(0, 2).toUpperCase()
-                                  : "OP"}
+                                  ? item.assignee_name.trim().charAt(0).toUpperCase()
+                                  : "O"}
                               </AvatarFallback>
                             </Avatar>
                           </div>
                         ) : (
-                          <span className="text-[10px] text-muted-foreground italic px-1.5">
+                          <span className="text-[11px] text-muted-foreground italic">
                             Unassigned
                           </span>
                         )}
                       </div>
 
                       {/* Inline Claim Button */}
-                      {canClaim && (
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          onClick={() => claimMutation.mutate(item)}
-                          disabled={isClaiming}
-                          className="h-7 text-xs font-semibold gap-1 border-primary/40 hover:bg-primary hover:text-primary-foreground"
-                        >
-                          {isClaiming ? (
-                            <Loader2 className="size-3 animate-spin" />
-                          ) : (
-                            <UserIcon className="size-3" />
-                          )}
-                          <span>Claim</span>
-                        </Button>
-                      )}
+                      <div className="sm:w-16 flex sm:justify-end">
+                        {canClaim && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => claimMutation.mutate(item)}
+                            disabled={isClaiming}
+                            className="h-7 text-xs font-semibold gap-1 rounded-sm border border-primary/50 text-primary hover:bg-primary hover:text-primary-foreground transition-colors shadow-none"
+                          >
+                            {isClaiming ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <UserIcon className="size-3" />
+                            )}
+                            <span>Claim</span>
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )

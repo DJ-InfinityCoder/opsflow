@@ -127,14 +127,14 @@ export function Sidebar() {
       </div>
 
       {/* Active Team / Role Footer */}
-      <div className="border-t p-3 bg-muted/30">
-        <div className="flex flex-col gap-1 rounded-lg border bg-background/80 p-2.5 shadow-2xs">
+      <div className="border-t border-border p-3 bg-muted/20">
+        <div className="flex flex-col gap-1 rounded-sm border border-border bg-card p-2.5 shadow-none mb-4 md:mb-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold truncate">
+            <span className="text-xs font-semibold truncate text-foreground">
               {activeTeam?.team_name || "No Team"}
             </span>
             {isSystemAdmin ? (
-              <span className="flex items-center gap-1 text-[10px] font-medium text-destructive">
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-destructive">
                 <ShieldAlert className="size-3" />
                 Admin
               </span>
@@ -146,7 +146,7 @@ export function Sidebar() {
           </div>
           <span className="text-[11px] text-muted-foreground truncate">
             {isLead
-              ? "Lead authorization enabled"
+              ? "Lead authorization active"
               : currentRole === "operator"
               ? "Operator permissions active"
               : "Reporter permissions active"}

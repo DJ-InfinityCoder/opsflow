@@ -11,20 +11,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const { isAuthenticated, isLoading } = useAuth()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const isLoginPage = pathname === "/login"
 
   React.useEffect(() => {
-    if (!isLoading && !isAuthenticated && !isLoginPage) {
+    if (mounted && !isLoading && !isAuthenticated && !isLoginPage) {
       router.push("/login")
     }
-  }, [isAuthenticated, isLoading, isLoginPage, router])
+  }, [mounted, isAuthenticated, isLoading, isLoginPage, router])
 
   if (isLoginPage) {
     return <>{children}</>
   }
 
-  if (isLoading) {
+  if (!mounted || isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">

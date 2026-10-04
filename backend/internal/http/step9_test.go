@@ -216,10 +216,14 @@ func TestStep9OutboxWorkerAndNotifications(t *testing.T) {
 	}
 	var notifPage struct {
 		Notifications []model.Notification `json:"notifications"`
+		UnreadCount   int                  `json:"unread_count"`
 	}
 	_ = json.Unmarshal(recNotif.Body.Bytes(), &notifPage)
 	if len(notifPage.Notifications) == 0 {
 		t.Fatalf("expected notifications in response, got 0")
+	}
+	if notifPage.UnreadCount != notifCount {
+		t.Fatalf("expected unread_count %d, got %d", notifCount, notifPage.UnreadCount)
 	}
 
 	// Test POST /notifications/read
@@ -243,6 +247,22 @@ func TestStep9OutboxWorkerAndNotifications(t *testing.T) {
 	}
 	if readAt == nil {
 		t.Fatalf("expected read_at to be non-nil after marking read")
+	}
+	readAllBody, _ := json.Marshal(map[string]any{"ids": []string{}})
+	reqReadAll := httptest.NewRequest("POST", "/notifications/read", bytes.NewReader(readAllBody))
+	reqReadAll.Header.Set("Authorization", "Bearer "+opToken)
+	reqReadAll.Header.Set("Content-Type", "application/json")
+	recReadAll := httptest.NewRecorder()
+	handler.ServeHTTP(recReadAll, reqReadAll)
+	if recReadAll.Code != stdhttp.StatusOK {
+		t.Fatalf("mark all read expected 200, got %d: %s", recReadAll.Code, recReadAll.Body.String())
+	}
+	remainingUnread, err := repo.NewNotificationRepository(pool).CountUnread(ctx, operator.ID)
+	if err != nil {
+		t.Fatalf("count unread notifications: %v", err)
+	}
+	if remainingUnread != 0 {
+		t.Fatalf("expected no unread notifications after mark all, got %d", remainingUnread)
 	}
 }
 
@@ -314,6 +334,54 @@ func TestStep9FeedAnalyticsAndAdminJobs(t *testing.T) {
 	_ = json.Unmarshal(recLeadAn.Body.Bytes(), &summary)
 	if summary.TotalItems < 1 {
 		t.Fatalf("expected at least 1 total item in analytics, got %d", summary.TotalItems)
+	}
+	if summary.AgingBuckets["under_1_day"] < 1 {
+		t.Fatalf("expected recently created item in under_1_day bucket, got %#v", summary.AgingBuckets)
+	}
+
+	reqLeadTeams := httptest.NewRequest("GET", "/analytics/teams", nil)
+	reqLeadTeams.Header.Set("Authorization", "Bearer "+leadToken)
+	recLeadTeams := httptest.NewRecorder()
+	handler.ServeHTTP(recLeadTeams, reqLeadTeams)
+	if recLeadTeams.Code != stdhttp.StatusOK {
+		t.Fatalf("lead analytics teams expected 200, got %d: %s", recLeadTeams.Code, recLeadTeams.Body.String())
+	}
+	var leadTeams []model.AnalyticsTeamMetric
+	if err := json.Unmarshal(recLeadTeams.Body.Bytes(), &leadTeams); err != nil {
+		t.Fatalf("decode lead analytics teams: %v", err)
+	}
+	if len(leadTeams) != 1 || leadTeams[0].TeamID != teamID {
+		t.Fatalf("expected only authorized lead team %s, got %#v", teamID, leadTeams)
+	}
+
+	reqOperatorTeams := httptest.NewRequest("GET", "/analytics/teams", nil)
+	reqOperatorTeams.Header.Set("Authorization", "Bearer "+opToken)
+	recOperatorTeams := httptest.NewRecorder()
+	handler.ServeHTTP(recOperatorTeams, reqOperatorTeams)
+	if recOperatorTeams.Code != stdhttp.StatusOK {
+		t.Fatalf("operator analytics teams expected 200, got %d: %s", recOperatorTeams.Code, recOperatorTeams.Body.String())
+	}
+	var operatorTeams []model.AnalyticsTeamMetric
+	if err := json.Unmarshal(recOperatorTeams.Body.Bytes(), &operatorTeams); err != nil {
+		t.Fatalf("decode operator analytics teams: %v", err)
+	}
+	if len(operatorTeams) != 0 {
+		t.Fatalf("expected no analytics teams for operator, got %#v", operatorTeams)
+	}
+
+	reqAdminTeams := httptest.NewRequest("GET", "/analytics/teams", nil)
+	reqAdminTeams.Header.Set("Authorization", "Bearer "+adminToken)
+	recAdminTeams := httptest.NewRecorder()
+	handler.ServeHTTP(recAdminTeams, reqAdminTeams)
+	if recAdminTeams.Code != stdhttp.StatusOK {
+		t.Fatalf("admin analytics teams expected 200, got %d: %s", recAdminTeams.Code, recAdminTeams.Body.String())
+	}
+	var adminTeams []model.AnalyticsTeamMetric
+	if err := json.Unmarshal(recAdminTeams.Body.Bytes(), &adminTeams); err != nil {
+		t.Fatalf("decode admin analytics teams: %v", err)
+	}
+	if len(adminTeams) != 1 || adminTeams[0].TeamID != teamID {
+		t.Fatalf("expected system admin to see all teams, got %#v", adminTeams)
 	}
 
 	// Operator should be forbidden (403)

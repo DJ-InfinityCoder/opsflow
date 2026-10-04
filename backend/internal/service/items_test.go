@@ -56,6 +56,17 @@ func TestItemServiceLifecycle(t *testing.T) {
 	if _, err := items.Create(ctx, user, invalidInput, "create-missing-required-field", service.HashRequestBody([]byte("missing-required"))); !errors.Is(err, service.ErrValidation) {
 		t.Fatalf("expected required-field validation error, got %v", err)
 	}
+	invalidTitle := input
+	invalidTitle.Title = ""
+	_, err = items.Create(ctx, user, invalidTitle, "create-invalid-title", service.HashRequestBody([]byte("invalid-title")))
+	var validationErr *service.AppError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected title validation error, got %v", err)
+	}
+	fieldDetails, ok := validationErr.Details.(map[string]any)
+	if !ok || fieldDetails["field"] != "title" {
+		t.Fatalf("expected title field detail, got %#v", validationErr.Details)
+	}
 	created, err := items.Create(ctx, user, input, "create-payment-item-1", service.HashRequestBody(createBody))
 	if err != nil {
 		t.Fatalf("create work item: %v", err)

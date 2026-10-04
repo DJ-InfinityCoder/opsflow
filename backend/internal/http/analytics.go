@@ -17,6 +17,22 @@ type analyticsHandlers struct {
 func mountAnalyticsRoutes(router chi.Router, authService *service.AuthService, analyticsService *service.AnalyticsService, logger *slog.Logger) {
 	handlers := analyticsHandlers{service: analyticsService, logger: logger}
 	router.With(requireAuth(authService, logger)).Get("/analytics/summary", handlers.summary)
+	router.With(requireAuth(authService, logger)).Get("/analytics/teams", handlers.teams)
+}
+
+func (h analyticsHandlers) teams(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	user, ok := contextUser(r)
+	if !ok {
+		writeError(w, r, service.ErrUnauthorized, h.logger)
+		return
+	}
+
+	teams, err := h.service.ListTeamMetrics(r.Context(), user)
+	if err != nil {
+		writeError(w, r, err, h.logger)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, teams)
 }
 
 func (h analyticsHandlers) summary(w stdhttp.ResponseWriter, r *stdhttp.Request) {

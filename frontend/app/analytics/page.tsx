@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useAuth } from "@/providers/auth-provider"
 import { apiFetch, ApiError } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
-import type { AnalyticsSummary } from "@/types"
+import type { AnalyticsSummary, AnalyticsTeamMetric } from "@/types"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,22 +38,28 @@ import {
 } from "lucide-react"
 
 export default function AnalyticsPage() {
-  const { isLead, isSystemAdmin, memberships, activeTeam, currentRole } = useAuth()
+  const { isSystemAdmin, memberships, activeTeam, currentRole } = useAuth()
+  const canRequestAnalytics = isSystemAdmin || memberships.some((membership) => membership.role === "lead")
 
-  // Eligible teams (user is lead or user is admin)
-  const eligibleTeams = React.useMemo(() => {
-    if (isSystemAdmin) {
-      return memberships
-    }
-    return memberships.filter((m) => m.role === "lead")
-  }, [memberships, isSystemAdmin])
+  const {
+    data: eligibleTeams = [],
+    isLoading: isLoadingTeams,
+    isError: isTeamsError,
+  } = useQuery<AnalyticsTeamMetric[]>({
+    queryKey: queryKeys.analytics.teams(),
+    queryFn: () => apiFetch<AnalyticsTeamMetric[]>("/analytics/teams"),
+    enabled: canRequestAnalytics,
+    staleTime: 30_000,
+  })
 
   const [selectedTeamId, setSelectedTeamId] = React.useState<string>("")
-  const effectiveTeamId =
-    selectedTeamId || activeTeam?.team_id || (eligibleTeams[0]?.team_id ?? "")
+  const defaultTeamId = eligibleTeams.some((team) => team.team_id === activeTeam?.team_id)
+    ? activeTeam?.team_id ?? ""
+    : eligibleTeams[0]?.team_id ?? ""
+  const effectiveTeamId = selectedTeamId || defaultTeamId
 
   const selectedTeamName =
-    memberships.find((m) => m.team_id === effectiveTeamId)?.team_name || "Team"
+    eligibleTeams.find((team) => team.team_id === effectiveTeamId)?.team_name || "Team"
 
   // Fetch summary from GET /analytics/summary?team=:id
   const {
@@ -66,12 +72,12 @@ export default function AnalyticsPage() {
   } = useQuery<AnalyticsSummary>({
     queryKey: queryKeys.analytics.summary(effectiveTeamId),
     queryFn: () => apiFetch<AnalyticsSummary>(`/analytics/summary?team=${effectiveTeamId}`),
-    enabled: !!effectiveTeamId && (isLead || isSystemAdmin),
+    enabled: !!effectiveTeamId && canRequestAnalytics,
     staleTime: 30_000,
   })
 
   // Permission Guard
-  if (!isLead && !isSystemAdmin) {
+  if (!canRequestAnalytics) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center max-w-md mx-auto my-12">
         <div className="rounded-full bg-destructive/10 p-3 mb-4">
@@ -104,8 +110,6 @@ export default function AnalyticsPage() {
         { name: "Triaged", key: "triaged", count: summary.by_status["triaged"] || 0, fill: "#6366f1" },
         { name: "In Progress", key: "in_progress", count: summary.by_status["in_progress"] || 0, fill: "#eab308" },
         { name: "Pending Approval", key: "pending_approval", count: summary.by_status["pending_approval"] || 0, fill: "#f97316" },
-        { name: "Resolved", key: "resolved", count: summary.by_status["resolved"] || 0, fill: "#10b981" },
-        { name: "Closed", key: "closed", count: summary.by_status["closed"] || 0, fill: "#64748b" },
       ]
     : []
 
@@ -119,29 +123,20 @@ export default function AnalyticsPage() {
       ]
     : []
 
-  // Chart data: SLA Health
-  const slaChartData = summary
+  // Chart data: Open item age buckets
+  const agingChartData = summary
     ? [
-        {
-          name: "SLA Breached",
-          count: summary.sla_breached_count,
-          fill: "#ef4444",
-        },
-        {
-          name: "SLA Warning (<4h)",
-          count: summary.sla_warning_count,
-          fill: "#f59e0b",
-        },
-        {
-          name: "Within SLA",
-          count: Math.max(
-            0,
-            summary.open_items - summary.sla_breached_count - summary.sla_warning_count
-          ),
-          fill: "#10b981",
-        },
+        { name: "< 1 day", count: summary.aging_buckets.under_1_day || 0, fill: "#14b8a6" },
+        { name: "1-3 days", count: summary.aging_buckets["1_to_3_days"] || 0, fill: "#0ea5e9" },
+        { name: "3-7 days", count: summary.aging_buckets["3_to_7_days"] || 0, fill: "#f59e0b" },
+        { name: "> 7 days", count: summary.aging_buckets.over_7_days || 0, fill: "#ef4444" },
       ]
     : []
+  const teamSLABreachData = eligibleTeams.map((team) => ({
+    name: team.team_name,
+    count: team.sla_breached_count,
+    fill: team.sla_breached_count > 0 ? "#ef4444" : "#14b8a6",
+  }))
 
   return (
     <div className="space-y-6">
@@ -171,7 +166,7 @@ export default function AnalyticsPage() {
             >
               <SelectTrigger className="w-52 h-9 text-xs">
                 <Building2 className="size-3.5 mr-1 text-muted-foreground" />
-                <SelectValue placeholder="Select team" />
+                <SelectValue placeholder="Select team">{selectedTeamName}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {eligibleTeams.map((m) => (
@@ -196,7 +191,24 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoadingTeams ? (
+        <div className="flex items-center justify-center p-16 text-sm text-muted-foreground gap-2">
+          <Loader2 className="size-6 animate-spin text-primary" />
+          <span>Loading authorized teams...</span>
+        </div>
+      ) : isTeamsError ? (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="p-6 text-center text-sm text-destructive">
+            Failed to load analytics teams.
+          </CardContent>
+        </Card>
+      ) : eligibleTeams.length === 0 ? (
+        <Card>
+          <CardContent className="p-6 text-center text-sm text-muted-foreground">
+            No teams are available for analytics.
+          </CardContent>
+        </Card>
+      ) : isLoading ? (
         <div className="flex flex-col items-center justify-center p-16 text-sm text-muted-foreground gap-2">
           <Loader2 className="size-6 animate-spin text-primary" />
           <span>Loading analytics metrics...</span>
@@ -286,7 +298,7 @@ export default function AnalyticsPage() {
             </Card>
           </div>
 
-          {/* Visual Charts: Open by Status & SLA Health */}
+          {/* Open workload and aging charts */}
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Status Breakdown Bar Chart */}
             <Card>
@@ -334,22 +346,22 @@ export default function AnalyticsPage() {
               </CardContent>
             </Card>
 
-            {/* SLA Health / Aging Buckets */}
+            {/* Open-item aging buckets */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Clock className="size-4 text-amber-500" />
-                  SLA Compliance & Aging Buckets
+                  Open Items by Age
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Proportion of open tickets meeting target turnaround times
+                  Time since creation for unresolved work items
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-64 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
-                      data={slaChartData}
+                      data={agingChartData}
                       margin={{ top: 10, right: 10, left: -20, bottom: 10 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
@@ -364,8 +376,8 @@ export default function AnalyticsPage() {
                         }}
                       />
                       <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                        {slaChartData.map((entry, index) => (
-                          <Cell key={`sla-cell-${index}`} fill={entry.fill} />
+                        {agingChartData.map((entry, index) => (
+                          <Cell key={`age-cell-${index}`} fill={entry.fill} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -374,6 +386,42 @@ export default function AnalyticsPage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <AlertTriangle className="size-4 text-destructive" />
+                Breached SLA by Team
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Open items past their target SLA across teams you are authorized to view
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={teamSLABreachData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
+                    <XAxis dataKey="name" fontSize={11} interval={0} angle={-15} textAnchor="end" />
+                    <YAxis allowDecimals={false} fontSize={11} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--card))",
+                        borderColor: "hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                    />
+                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                      {teamSLABreachData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Priority Distribution */}
           <Card>

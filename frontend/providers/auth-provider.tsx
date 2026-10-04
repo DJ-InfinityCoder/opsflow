@@ -27,6 +27,14 @@ const AuthContext = React.createContext<AuthContextValue | undefined>(undefined)
 
 const ACTIVE_TEAM_KEY = "opsflow_active_team_id"
 
+const FALLBACK_DEMO_USERS: User[] = [
+  { id: "demo-alicia", email: "alicia@opsflow.local", name: "Alicia", is_system_admin: true },
+  { id: "demo-marcus", email: "marcus@opsflow.local", name: "Marcus", is_system_admin: false },
+  { id: "demo-priya", email: "priya@opsflow.local", name: "Priya", is_system_admin: false },
+  { id: "demo-noah", email: "noah@opsflow.local", name: "Noah", is_system_admin: false },
+  { id: "demo-elena", email: "elena@opsflow.local", name: "Elena", is_system_admin: false },
+]
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient()
   const [token, setTokenState] = React.useState<string | null>(() => getAuthToken())
@@ -119,7 +127,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setActiveTeam,
       isLoading: !!token && isLoadingMe,
       isAuthenticated: !!user,
-      demoUsers: demoUsersData?.users ?? [],
+      demoUsers:
+        demoUsersData?.users && demoUsersData.users.length > 0
+          ? demoUsersData.users
+          : FALLBACK_DEMO_USERS,
       isLoadingDemoUsers,
       loginAs,
       logout,

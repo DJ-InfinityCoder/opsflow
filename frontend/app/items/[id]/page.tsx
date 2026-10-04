@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useAuth } from "@/providers/auth-provider"
 import { apiFetch, ApiError } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
+import { useIdempotencyKey } from "@/hooks/use-idempotency-key"
 import type {
   WorkItem,
   ItemEvent,
@@ -230,14 +231,14 @@ function ItemDetailContent({
   const [loadedVersion, setLoadedVersion] = React.useState<number>(initialItem.version)
   const [isFormDirty, setIsFormDirty] = React.useState(false)
 
-  // Idempotency Keys using useRef per user intent
-  const editIdempotencyKeyRef = React.useRef<string>(crypto.randomUUID())
-  const actionIdempotencyKeyRef = React.useRef<string>(crypto.randomUUID())
+  // Idempotency keys per user intent; new edits/actions get a new key.
+  const editIdempotencyKey = useIdempotencyKey()
+  const actionIdempotencyKey = useIdempotencyKey()
 
   // Reset idempotency keys when inputs change
   const handleInputChange = () => {
     setIsFormDirty(true)
-    editIdempotencyKeyRef.current = crypto.randomUUID()
+    editIdempotencyKey.resetForNewIntent()
   }
 
   // Reason Dialog state for transitions requiring justification
@@ -266,7 +267,7 @@ function ItemDetailContent({
       setDraftCustomFields(item.custom_fields || {})
       setLoadedVersion(item.version)
       setIsFormDirty(false)
-      editIdempotencyKeyRef.current = crypto.randomUUID()
+      editIdempotencyKey.resetForNewIntent()
       toast.info(`Updated draft to latest server version (v${item.version})`)
     }
   }
@@ -284,7 +285,7 @@ function ItemDetailContent({
         method: "PATCH",
         body: patchPayload,
         ifMatch: versionToMatch,
-        idempotencyKey: editIdempotencyKeyRef.current,
+        idempotencyKey: editIdempotencyKey.read(),
       })
     },
     onSuccess: (updated) => {
@@ -295,7 +296,7 @@ function ItemDetailContent({
       setDraftPriority(updated.priority)
       setDraftCustomFields(updated.custom_fields || {})
       setIsFormDirty(false)
-      editIdempotencyKeyRef.current = crypto.randomUUID()
+      editIdempotencyKey.resetForNewIntent()
 
       queryClient.setQueryData(queryKeys.items.detail(itemID), updated)
       queryClient.invalidateQueries({ queryKey: queryKeys.items.events(itemID) })
@@ -379,7 +380,7 @@ function ItemDetailContent({
         method: "POST",
         body: { to: targetState, reason },
         ifMatch: item.version,
-        idempotencyKey: actionIdempotencyKeyRef.current,
+        idempotencyKey: actionIdempotencyKey.read(),
       })
     },
     onMutate: async ({ targetState }) => {
@@ -404,7 +405,7 @@ function ItemDetailContent({
     },
     onSuccess: (updated) => {
       toast.success(`Item moved to ${formatStatusLabel(updated.status)}`)
-      actionIdempotencyKeyRef.current = crypto.randomUUID()
+      actionIdempotencyKey.resetForNewIntent()
       setLoadedVersion(updated.version)
       queryClient.setQueryData(queryKeys.items.detail(itemID), updated)
       queryClient.invalidateQueries({ queryKey: queryKeys.items.events(itemID) })
@@ -414,7 +415,7 @@ function ItemDetailContent({
   })
 
   const triggerTransition = (targetState: string) => {
-    actionIdempotencyKeyRef.current = crypto.randomUUID()
+    actionIdempotencyKey.resetForNewIntent()
     const requiresReason =
       targetState === "pending_approval" ||
       (item.status === "resolved" && targetState === "in_progress") ||
@@ -457,7 +458,7 @@ function ItemDetailContent({
       return apiFetch<WorkItem>(`/items/${itemID}/approvals/${approvalID}/decide`, {
         method: "POST",
         body: { decision, reason },
-        idempotencyKey: actionIdempotencyKeyRef.current,
+        idempotencyKey: actionIdempotencyKey.read(),
       })
     },
     onMutate: async ({ decision }) => {
@@ -481,7 +482,7 @@ function ItemDetailContent({
     },
     onSuccess: (updated, { decision }) => {
       toast.success(`Approval ${decision === "approved" ? "approved" : "rejected"} successfully`)
-      actionIdempotencyKeyRef.current = crypto.randomUUID()
+      actionIdempotencyKey.resetForNewIntent()
       setLoadedVersion(updated.version)
       queryClient.setQueryData(queryKeys.items.detail(itemID), updated)
       queryClient.invalidateQueries({ queryKey: queryKeys.items.events(itemID) })
@@ -491,7 +492,7 @@ function ItemDetailContent({
   })
 
   const triggerApprovalDecision = (decision: "approved" | "rejected") => {
-    actionIdempotencyKeyRef.current = crypto.randomUUID()
+    actionIdempotencyKey.resetForNewIntent()
     setApprovalDecision(decision)
     setApprovalReason("")
     setApprovalDialogOpen(true)
@@ -521,12 +522,12 @@ function ItemDetailContent({
   const [mentionQuery, setMentionQuery] = React.useState<string | null>(null)
   const [mentionPosition, setMentionPosition] = React.useState<number>(0)
   const commentInputRef = React.useRef<HTMLTextAreaElement>(null)
-  const commentIdempotencyKeyRef = React.useRef<string>(crypto.randomUUID())
+  const commentIdempotencyKey = useIdempotencyKey()
 
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
     setCommentText(val)
-    commentIdempotencyKeyRef.current = crypto.randomUUID()
+    commentIdempotencyKey.resetForNewIntent()
 
     const cursor = e.target.selectionStart || 0
     const textBeforeCursor = val.slice(0, cursor)
@@ -555,13 +556,13 @@ function ItemDetailContent({
       return apiFetch<Comment>(`/items/${itemID}/comments`, {
         method: "POST",
         body: { body },
-        idempotencyKey: commentIdempotencyKeyRef.current,
+        idempotencyKey: commentIdempotencyKey.read(),
       })
     },
     onSuccess: (newComment) => {
       toast.success("Comment added")
       setCommentText("")
-      commentIdempotencyKeyRef.current = crypto.randomUUID()
+      commentIdempotencyKey.resetForNewIntent()
       queryClient.setQueryData<{ comments: Comment[] }>(queryKeys.items.comments(itemID), (old) => {
         return {
           comments: [...(old?.comments || []), newComment],
@@ -720,7 +721,7 @@ function ItemDetailContent({
               <div className="flex items-center gap-1.5 font-semibold text-foreground">
                 <Avatar className="size-5 border">
                   <AvatarFallback className="text-[9px] bg-primary/10 text-primary font-bold">
-                    {item.assignee_name ? item.assignee_name.slice(0, 2).toUpperCase() : "OP"}
+                    {item.assignee_name ? item.assignee_name.trim().charAt(0).toUpperCase() : "O"}
                   </AvatarFallback>
                 </Avatar>
                 <span>{item.assignee_name || item.assignee_id}</span>
@@ -1034,7 +1035,7 @@ function ItemDetailContent({
                     >
                       <Avatar className="size-6 border shrink-0 mt-0.5">
                         <AvatarFallback className="text-[9px] font-bold bg-primary/10 text-primary">
-                          {entry.authorName ? entry.authorName.slice(0, 2).toUpperCase() : "OP"}
+                          {entry.authorName ? entry.authorName.trim().charAt(0).toUpperCase() : "U"}
                         </AvatarFallback>
                       </Avatar>
 

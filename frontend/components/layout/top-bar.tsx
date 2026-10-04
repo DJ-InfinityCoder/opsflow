@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { NotificationsPopover } from "@/components/notifications/notifications-popover"
 import { NewItemDialog } from "@/components/items/new-item-dialog"
+import { ThemeToggle } from "@/components/layout/theme-toggle"
 
 export function TopBar() {
   const {
@@ -42,12 +43,8 @@ export function TopBar() {
   const [newItemOpen, setNewItemOpen] = React.useState(false)
 
   const getInitials = (name?: string) => {
-    if (!name) return "U"
-    const parts = name.trim().split(" ")
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
-    }
-    return name.slice(0, 2).toUpperCase()
+    if (!name || !name.trim()) return "U"
+    return name.trim().charAt(0).toUpperCase()
   }
 
   const roleBadgeVariant = (role: string | null) => {
@@ -66,24 +63,24 @@ export function TopBar() {
       {/* Team Filter / Selector */}
       <div className="flex items-center gap-2">
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="gap-2 h-9 px-3 font-normal" />}>
-            <Building2 className="size-4 text-muted-foreground" />
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="gap-2 h-8 px-2.5 rounded-sm border border-border bg-background hover:bg-accent font-normal text-xs" />}>
+            <Building2 className="size-3.5 text-muted-foreground" />
             <div className="flex items-center gap-1.5 text-left">
-              <span className="font-semibold text-sm">
+              <span className="font-semibold text-xs text-foreground">
                 {activeTeam ? activeTeam.team_name : "Select Team"}
               </span>
               {currentRole && (
                 <Badge
                   variant={roleBadgeVariant(currentRole)}
-                  className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0"
+                  className="text-[9px] uppercase font-semibold tracking-wider px-1.5 py-0 h-4"
                 >
                   {currentRole}
                 </Badge>
               )}
             </div>
-            <ChevronDown className="size-3.5 opacity-50 ml-1" />
+            <ChevronDown className="size-3 opacity-50 ml-0.5" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuContent align="start" className="w-56 border border-border bg-popover shadow-none rounded-md">
             <DropdownMenuLabel>Your Teams</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
@@ -101,12 +98,12 @@ export function TopBar() {
                       className="flex items-center justify-between cursor-pointer"
                     >
                       <div className="flex flex-col">
-                        <span className="font-medium text-sm">{m.team_name}</span>
-                        <span className="text-xs text-muted-foreground capitalize">
+                        <span className="font-medium text-xs">{m.team_name}</span>
+                        <span className="text-[10px] text-muted-foreground capitalize">
                           {m.role}
                         </span>
                       </div>
-                      {isSelected && <Check className="size-4 text-primary" />}
+                      {isSelected && <Check className="size-3.5 text-primary" />}
                     </DropdownMenuItem>
                   )
                 })
@@ -117,11 +114,11 @@ export function TopBar() {
       </div>
 
       {/* Right side: New Item, Notifications, User Switcher dropdown */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         <Button
           size="sm"
           onClick={() => setNewItemOpen(true)}
-          className="h-8 gap-1.5 px-3 text-xs font-semibold shadow-xs"
+          className="h-8 gap-1.5 px-3 text-xs font-semibold rounded-sm border border-primary bg-primary text-primary-foreground hover:bg-primary/90 shadow-none"
         >
           <Plus className="size-3.5" />
           <span className="hidden sm:inline">New Item</span>
@@ -129,28 +126,29 @@ export function TopBar() {
 
         <NotificationsPopover />
 
+        <ThemeToggle />
+
         {isSystemAdmin && (
-          <Badge variant="destructive" className="gap-1 text-[11px] py-0.5 hidden md:flex">
+          <Badge variant="destructive" className="gap-1 text-[10px] py-0.5 h-6 hidden md:flex border border-destructive/30">
             <ShieldAlert className="size-3" />
             System Admin
           </Badge>
         )}
 
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="gap-2 h-9 px-2 hover:bg-accent/80" />}>
-            <Avatar className="size-7 border border-border">
-              <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="gap-2 h-8 px-2 rounded-sm border border-border bg-background hover:bg-accent text-foreground font-normal" />}>
+            <Avatar className="size-5 border border-border">
+              <AvatarFallback className="text-[10px] font-bold bg-primary text-primary-foreground">
                 {getInitials(user?.name)}
               </AvatarFallback>
             </Avatar>
             <div className="hidden flex-col items-start text-left sm:flex">
-              <span className="text-xs font-semibold leading-none">{user?.name || "Anonymous"}</span>
-              <span className="text-[10px] text-muted-foreground leading-tight">{user?.email}</span>
+              <span className="text-xs font-medium leading-none">{user?.name || "User"}</span>
             </div>
-            <ChevronDown className="size-3.5 opacity-50" />
+            <ChevronDown className="size-3 opacity-50" />
           </DropdownMenuTrigger>
 
-          <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuContent align="end" className="w-64 border border-border bg-popover shadow-none rounded-md">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-semibold">{user?.name}</p>

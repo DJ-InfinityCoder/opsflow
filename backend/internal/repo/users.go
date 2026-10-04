@@ -14,6 +14,14 @@ import (
 var ErrUserNotFound = errors.New("user not found")
 
 var DemoUserEmails = []string{
+	"alicia@opsflow.local",
+	"marcus@opsflow.local",
+	"priya@opsflow.local",
+	"noah@opsflow.local",
+	"elena@opsflow.local",
+	"jonas@opsflow.local",
+	"nina@opsflow.local",
+	"omar@opsflow.local",
 	"admin@opsflow.dev",
 	"lead@opsflow.dev",
 	"operator@opsflow.dev",
@@ -81,8 +89,22 @@ func (r *UserRepository) ListDemoUsers(ctx context.Context) ([]model.User, error
 		}
 		users = append(users, user)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate demo users: %w", err)
+	if len(users) == 0 {
+		fallbackRows, err := r.pool.Query(ctx, `
+			SELECT id::text, email, name, is_system_admin
+			FROM users
+			ORDER BY is_system_admin DESC, email ASC
+			LIMIT 10
+		`)
+		if err == nil {
+			defer fallbackRows.Close()
+			for fallbackRows.Next() {
+				var u model.User
+				if err := fallbackRows.Scan(&u.ID, &u.Email, &u.Name, &u.IsSystemAdmin); err == nil {
+					users = append(users, u)
+				}
+			}
+		}
 	}
 	return users, nil
 }

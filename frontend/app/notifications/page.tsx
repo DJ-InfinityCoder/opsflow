@@ -59,7 +59,7 @@ export default function NotificationsPage() {
   })
 
   const notifications = data?.notifications || []
-  const unreadCount = notifications.filter((n) => !n.read_at).length
+  const unreadCount = data?.unread_count ?? notifications.filter((n) => !n.read_at).length
 
   // Mark as read mutation
   const markReadMutation = useMutation({
@@ -79,9 +79,8 @@ export default function NotificationsPage() {
   })
 
   const handleMarkAllRead = () => {
-    const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.id)
-    if (unreadIds.length === 0) return
-    markReadMutation.mutate(unreadIds)
+    if (unreadCount === 0) return
+    markReadMutation.mutate([])
   }
 
   const handleNotificationClick = (notif: Notification) => {

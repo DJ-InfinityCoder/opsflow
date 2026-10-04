@@ -25,6 +25,7 @@ func NewNotificationService(pool *pgxpool.Pool) *NotificationService {
 type NotificationPage struct {
 	Notifications []model.Notification `json:"notifications"`
 	NextCursor    string               `json:"next_cursor,omitempty"`
+	UnreadCount   int                  `json:"unread_count"`
 }
 
 type notifCursor struct {
@@ -67,6 +68,10 @@ func (s *NotificationService) List(ctx context.Context, user model.User, unreadO
 			items = items[:limit]
 		}
 		page.Notifications = items
+		page.UnreadCount, err = r.CountUnread(ctx, user.ID)
+		if err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {

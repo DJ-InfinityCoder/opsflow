@@ -53,7 +53,7 @@ export function NotificationsPopover() {
 
   const notifications = data?.notifications || []
   const unreadNotifications = notifications.filter((n) => !n.read_at)
-  const unreadCount = unreadNotifications.length
+  const unreadCount = data?.unread_count ?? unreadNotifications.length
 
   // Mutation to mark notifications as read
   const markReadMutation = useMutation({
@@ -79,9 +79,8 @@ export function NotificationsPopover() {
   }
 
   const handleMarkAllRead = () => {
-    if (unreadNotifications.length === 0) return
-    const ids = unreadNotifications.map((n) => n.id)
-    markReadMutation.mutate(ids)
+    if (unreadCount === 0) return
+    markReadMutation.mutate([])
   }
 
   const getNotificationIcon = (type: string) => {
@@ -116,22 +115,22 @@ export function NotificationsPopover() {
       <PopoverTrigger
         render={
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon-sm"
-            className="relative text-muted-foreground hover:text-foreground"
+            className="relative size-8 rounded-sm border border-border bg-background hover:bg-accent text-foreground transition-colors"
             aria-label="Notifications"
           />
         }
       >
-        <Bell className="size-4.5" />
+        <Bell className="size-4 text-foreground/80" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow-xs animate-in zoom-in-50">
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground border-2 border-background animate-in zoom-in-50">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-80 sm:w-96 p-0 shadow-lg">
+      <PopoverContent align="end" className="w-80 sm:w-96 p-0 border border-border shadow-none rounded-md">
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">

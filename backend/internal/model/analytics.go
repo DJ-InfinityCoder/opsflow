@@ -8,9 +8,16 @@ type AnalyticsSummary struct {
 	OpenItems        int            `json:"open_items"`
 	ByStatus         map[string]int `json:"by_status"`
 	ByPriority       map[int]int    `json:"by_priority"`
+	AgingBuckets     map[string]int `json:"aging_buckets"`
 	SLABreachedCount int            `json:"sla_breached_count"`
 	SLAWarningCount  int            `json:"sla_warning_count"`
 	MTTRSeconds      float64        `json:"mttr_seconds"`
+}
+
+type AnalyticsTeamMetric struct {
+	TeamID           string `json:"team_id"`
+	TeamName         string `json:"team_name"`
+	SLABreachedCount int    `json:"sla_breached_count"`
 }
 
 type FeedEvent struct {

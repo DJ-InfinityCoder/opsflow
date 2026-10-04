@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -46,4 +47,44 @@ func (s *AnalyticsService) GetSummary(ctx context.Context, user model.User, team
 		return model.AnalyticsSummary{}, err
 	}
 	return summary, nil
+}
+
+func (s *AnalyticsService) ListTeamMetrics(ctx context.Context, user model.User) ([]model.AnalyticsTeamMetric, error) {
+	var teams []model.AnalyticsTeamMetric
+	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		membershipStore := authz.NewPostgresMembershipStore(tx)
+		authorizer := authz.NewAuthorizer(membershipStore)
+		var teamIDs []string
+		var err error
+		if user.IsSystemAdmin {
+			teamIDs, err = membershipStore.ListAllTeamIDs(ctx)
+		} else {
+			teamIDs, err = membershipStore.ListTeamIDs(ctx, user.ID)
+		}
+		if err != nil {
+			return err
+		}
+
+		analyticsTeamIDs := make([]string, 0, len(teamIDs))
+		for _, teamID := range teamIDs {
+			err := authorizer.Authorize(ctx, user, authz.Action{Name: authz.ActionAnalyticsView}, authz.Item{TeamID: teamID})
+			if errors.Is(err, ErrForbidden) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			analyticsTeamIDs = append(analyticsTeamIDs, teamID)
+		}
+
+		teams, err = repo.NewAnalyticsRepository(tx).ListTeamSLABreaches(ctx, analyticsTeamIDs)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if teams == nil {
+		teams = []model.AnalyticsTeamMetric{}
+	}
+	return teams, nil
 }

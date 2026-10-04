@@ -48,16 +48,16 @@ func (s *ItemService) Create(ctx context.Context, user model.User, input CreateI
 	input.TeamID = strings.TrimSpace(input.TeamID)
 	input.Title = strings.TrimSpace(input.Title)
 	if !isUUID(input.TeamID) {
-		return MutationResponse{}, NewAppError(KindValidation, "team_id must be a UUID", nil)
+		return MutationResponse{}, NewAppError(KindValidation, "team_id must be a UUID", map[string]any{"field": "team_id"})
 	}
 	if input.Title == "" || len(input.Title) > 500 {
-		return MutationResponse{}, NewAppError(KindValidation, "title is required and must be at most 500 characters", nil)
+		return MutationResponse{}, NewAppError(KindValidation, "title is required and must be at most 500 characters", map[string]any{"field": "title"})
 	}
 	if len(input.Description) > 30000 {
-		return MutationResponse{}, NewAppError(KindValidation, "description must be at most 30000 characters", nil)
+		return MutationResponse{}, NewAppError(KindValidation, "description must be at most 30000 characters", map[string]any{"field": "description"})
 	}
 	if slaForPriority(input.Priority) == 0 {
-		return MutationResponse{}, NewAppError(KindValidation, "priority must be between 1 and 4", nil)
+		return MutationResponse{}, NewAppError(KindValidation, "priority must be between 1 and 4", map[string]any{"field": "priority"})
 	}
 	if err := validateIdempotencyKey(idempotencyKey, requestHash); err != nil {
 		return MutationResponse{}, err
