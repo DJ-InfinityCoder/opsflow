@@ -30,6 +30,7 @@ import {
 import { NotificationsPopover } from "@/components/notifications/notifications-popover"
 import { NewItemDialog } from "@/components/items/new-item-dialog"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
+import { BackendStatusIndicator } from "@/components/layout/backend-status-banner"
 
 export function TopBar() {
   const router = useRouter()
@@ -161,6 +162,8 @@ export function TopBar() {
         </Button>
 
         <NotificationsPopover />
+
+        <BackendStatusIndicator />
 
         <ThemeToggle />
 

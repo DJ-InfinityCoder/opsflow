@@ -7,6 +7,8 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { TopBar } from "@/components/layout/top-bar"
 import { Skeleton } from "@/components/ui/skeleton"
 
+import { BackendStatusBanner } from "@/components/layout/backend-status-banner"
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -26,7 +28,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [mounted, isAuthenticated, isLoading, isLoginPage, router])
 
   if (isLoginPage) {
-    return <>{children}</>
+    return (
+      <div className="flex min-h-screen flex-col">
+        <BackendStatusBanner />
+        <div className="flex-1 flex items-center justify-center">
+          {children}
+        </div>
+      </div>
+    )
   }
 
   if (!mounted || isLoading) {
@@ -52,6 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar />
+        <BackendStatusBanner />
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-20 md:pb-28">
           {children}
         </main>

@@ -63,11 +63,33 @@ export interface RequestOptions extends Omit<RequestInit, "body"> {
   skipAuth?: boolean
 }
 
+export function getApiBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
+}
+
+export async function pingBackendHealth(timeoutMs = 6000): Promise<boolean> {
+  const baseUrl = getApiBaseUrl()
+  const healthUrl = `${baseUrl.replace(/\/+$/, "")}/healthz`
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    const res = await fetch(healthUrl, {
+      method: "GET",
+      signal: controller.signal,
+      cache: "no-store",
+    })
+    clearTimeout(timeoutId)
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
+  const baseUrl = getApiBaseUrl()
   const url = path.startsWith("http") ? path : `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`
 
   const headers = new Headers(options.headers || {})
