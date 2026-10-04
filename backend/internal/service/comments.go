@@ -127,7 +127,17 @@ func (s *CommentService) Create(ctx context.Context, user model.User, itemID, bo
 			}
 		}
 
-		if err := insertItemOutbox(ctx, items, "item.commented", item); err != nil {
+		commentPayload, err := json.Marshal(map[string]any{
+			"item_id":    item.ID,
+			"team_id":    item.TeamID,
+			"comment_id": c.ID,
+			"event_id":   eventID,
+			"version":    item.Version,
+		})
+		if err != nil {
+			return fmt.Errorf("encode comment outbox payload: %w", err)
+		}
+		if err := items.InsertOutbox(ctx, "item.commented", fmt.Sprintf("item.commented:%s:%s", item.ID, c.ID), commentPayload); err != nil {
 			return err
 		}
 

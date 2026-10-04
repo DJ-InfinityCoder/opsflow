@@ -54,9 +54,12 @@ import {
 
 function formatRelativeTime(dateString: string): string {
   try {
+    if (!dateString) return "just now"
     const date = new Date(dateString)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
+    const time = date.getTime()
+    if (Number.isNaN(time)) return dateString
+    const now = Date.now()
+    const diffMs = now - time
     if (diffMs < 0) return "just now"
     const diffSec = Math.floor(diffMs / 1000)
     if (diffSec < 60) return "just now"
@@ -68,7 +71,7 @@ function formatRelativeTime(dateString: string): string {
     if (diffDays < 7) return `${diffDays}d ago`
     return date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
   } catch {
-    return dateString
+    return dateString || ""
   }
 }
 
@@ -625,9 +628,11 @@ function ItemDetailContent({
       actorId: c.author_id,
     }))
 
-    return [...events, ...comments].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    )
+    return [...events, ...comments].sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+      return (Number.isNaN(timeA) ? 0 : timeA) - (Number.isNaN(timeB) ? 0 : timeB)
+    })
   }, [eventsData, commentsData])
 
   const filteredMentions = React.useMemo(() => {
