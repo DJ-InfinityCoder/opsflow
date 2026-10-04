@@ -8,11 +8,10 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
-import { useVirtualizer } from "@tanstack/react-virtual"
 import { useAuth } from "@/providers/auth-provider"
 import { apiFetch } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
-import type { ItemListResult, ViewCounts } from "@/types"
+import type { ItemListResult, ViewCounts, WorkItem } from "@/types"
 import { useClaimWorkItem } from "@/hooks/use-claim-work-item"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -169,6 +168,117 @@ function getSlaBadge(slaState?: string) {
   }
 }
 
+interface WorkItemRowProps {
+  item: WorkItem
+  teamName: string
+  onClaim: (item: WorkItem) => void
+  isClaiming: boolean
+}
+
+const WorkItemRow = React.memo(function WorkItemRow({
+  item,
+  teamName,
+  onClaim,
+  isClaiming,
+}: WorkItemRowProps) {
+  const canClaim =
+    !item.assignee_id &&
+    (item.status === "new" ||
+      item.status === "triaged" ||
+      item.status === "in_progress")
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 px-4 gap-2.5 transition-colors hover:bg-muted/40 border-b border-border/80 bg-card last:border-b-0">
+      {/* Item Information */}
+      <div className="flex items-start gap-3 min-w-0 flex-1">
+        {/* Priority Badge */}
+        <div className="shrink-0 pt-0.5">{getPriorityBadge(item.priority)}</div>
+
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/items/${item.id}`}
+              className="font-semibold text-xs sm:text-sm text-foreground truncate hover:text-primary hover:underline underline-offset-2 transition-colors"
+            >
+              {item.title}
+            </Link>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1 font-medium text-foreground/80">
+              <Building2 className="size-3 text-muted-foreground" />
+              {teamName}
+            </span>
+            <span>•</span>
+            <span>Updated {formatRelativeTime(item.updated_at)}</span>
+            {item.due_at && (
+              <>
+                <span>•</span>
+                <span>Due {formatRelativeTime(item.due_at)}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Metadata & Actions */}
+      <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pt-1 sm:pt-0">
+        {/* SLA Badge */}
+        <div className="sm:w-24 flex sm:justify-center">
+          {getSlaBadge(item.sla_state)}
+        </div>
+
+        {/* Status Badge */}
+        <div className="sm:w-24 flex sm:justify-center">
+          {getStatusBadge(item.status)}
+        </div>
+
+        {/* Assignee Avatar */}
+        <div className="sm:w-20 flex sm:justify-center">
+          {item.assignee_id ? (
+            <div
+              className="flex items-center gap-1.5"
+              title={`Assigned to ${item.assignee_name || item.assignee_id}`}
+            >
+              <Avatar className="size-6 border border-border">
+                <AvatarFallback className="text-[10px] font-bold bg-primary/10 text-primary">
+                  {item.assignee_name
+                    ? item.assignee_name.trim().charAt(0).toUpperCase()
+                    : "O"}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+          ) : (
+            <span className="text-[11px] text-muted-foreground italic">
+              Unassigned
+            </span>
+          )}
+        </div>
+
+        {/* Inline Claim Button */}
+        <div className="sm:w-16 flex sm:justify-end">
+          {canClaim && (
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => onClaim(item)}
+              disabled={isClaiming}
+              className="h-7 text-xs font-semibold gap-1 rounded-sm border border-primary/50 text-primary hover:bg-primary hover:text-primary-foreground transition-colors shadow-none"
+            >
+              {isClaiming ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <UserIcon className="size-3" />
+              )}
+              <span>Claim</span>
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+})
+
 function DashboardContent() {
   const router = useRouter()
   const pathname = usePathname()
@@ -291,18 +401,48 @@ function DashboardContent() {
     [data]
   )
 
-  // Virtualizer container
-  const parentRef = React.useRef<HTMLDivElement>(null)
-  // TanStack Virtual returns functions that React Compiler cannot safely memoize.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: hasNextPage ? allItems.length + 1 : allItems.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 76,
-    overscan: 6,
-  })
+  // Team name lookup map for O(1) row lookups without recomputations
+  const teamNameMap = React.useMemo(() => {
+    const map = new Map<string, string>()
+    for (const m of memberships) {
+      if (m.team_id && m.team_name) {
+        map.set(m.team_id, m.team_name)
+      }
+    }
+    return map
+  }, [memberships])
 
   const claimMutation = useClaimWorkItem(activeQueryKey, user)
+
+  const handleClaim = React.useCallback(
+    (item: WorkItem) => {
+      claimMutation.mutate(item)
+    },
+    [claimMutation]
+  )
+
+  // Infinite scroll trigger via IntersectionObserver
+  const loadMoreRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    const target = loadMoreRef.current
+    if (!target || !hasNextPage || isFetchingNextPage) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { rootMargin: "300px" }
+    )
+
+    observer.observe(target)
+    return () => {
+      observer.unobserve(target)
+      observer.disconnect()
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   // Tabs configuration
   const tabs = [
@@ -647,163 +787,58 @@ function DashboardContent() {
             )}
           </div>
         ) : (
-          // Virtualized List
-          <div
-            ref={parentRef}
-            className="flex-1 overflow-y-auto divide-y divide-border/60"
-          >
-            <div
-              style={{
-                height: `${virtualizer.getTotalSize() + 56}px`,
-                width: "100%",
-                position: "relative",
-              }}
-            >
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const isLoaderRow = virtualRow.index >= allItems.length
-                const item = allItems[virtualRow.index]
-
-                if (isLoaderRow) {
-                  if (hasNextPage && !isFetchingNextPage) {
-                    fetchNextPage()
+          <div>
+            <div className="divide-y divide-border/60">
+              {allItems.map((item) => (
+                <WorkItemRow
+                  key={item.id}
+                  item={item}
+                  teamName={
+                    item.team_name ||
+                    (item.team_id ? teamNameMap.get(item.team_id) : undefined) ||
+                    "Operations"
                   }
-                  return (
-                    <div
-                      key="loader-row"
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: `${virtualRow.size}px`,
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                      className="flex items-center justify-center p-3 text-xs text-muted-foreground gap-2"
-                    >
-                      <Loader2 className="size-4 animate-spin" />
-                      <span>Loading more items...</span>
-                    </div>
-                  )
-                }
+                  onClaim={handleClaim}
+                  isClaiming={
+                    claimMutation.isPending &&
+                    claimMutation.variables?.id === item.id
+                  }
+                />
+              ))}
+            </div>
 
-                const canClaim =
-                  !item.assignee_id &&
-                  (item.status === "new" ||
-                    item.status === "triaged" ||
-                    item.status === "in_progress")
-
-                const isClaiming = claimMutation.isPending && claimMutation.variables?.id === item.id
-
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 px-4 gap-2.5 transition-colors hover:bg-muted/40 border-b border-border/80 bg-card"
-                  >
-                    {/* Item Information */}
-                    <div className="flex items-start gap-3 min-w-0 flex-1">
-                      {/* Priority Badge */}
-                      <div className="shrink-0 pt-0.5">{getPriorityBadge(item.priority)}</div>
-
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Link
-                            href={`/items/${item.id}`}
-                            className="font-semibold text-xs sm:text-sm text-foreground truncate hover:text-primary hover:underline underline-offset-2 transition-colors"
-                          >
-                            {item.title}
-                          </Link>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                          {(() => {
-                            const name = item.team_name || memberships.find((m) => m.team_id === item.team_id)?.team_name
-                            return (
-                              <span className="flex items-center gap-1 font-medium text-foreground/80">
-                                <Building2 className="size-3 text-muted-foreground" />
-                                {name || "Operations"}
-                              </span>
-                            )
-                          })()}
-                          <span>•</span>
-                          <span>Updated {formatRelativeTime(item.updated_at)}</span>
-                          {item.due_at && (
-                            <>
-                              <span>•</span>
-                              <span>Due {formatRelativeTime(item.due_at)}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Metadata & Actions */}
-                    <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pt-1 sm:pt-0">
-                      {/* SLA Badge */}
-                      <div className="sm:w-24 flex sm:justify-center">
-                        {getSlaBadge(item.sla_state)}
-                      </div>
-
-                      {/* Status Badge */}
-                      <div className="sm:w-24 flex sm:justify-center">
-                        {getStatusBadge(item.status)}
-                      </div>
-
-                      {/* Assignee Avatar */}
-                      <div className="sm:w-20 flex sm:justify-center">
-                        {item.assignee_id ? (
-                          <div
-                            className="flex items-center gap-1.5"
-                            title={`Assigned to ${item.assignee_name || item.assignee_id}`}
-                          >
-                            <Avatar className="size-6 border border-border">
-                              <AvatarFallback className="text-[10px] font-bold bg-primary/10 text-primary">
-                                {item.assignee_name
-                                  ? item.assignee_name.trim().charAt(0).toUpperCase()
-                                  : "O"}
-                              </AvatarFallback>
-                            </Avatar>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-muted-foreground italic">
-                            Unassigned
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Inline Claim Button */}
-                      <div className="sm:w-16 flex sm:justify-end">
-                        {canClaim && (
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            onClick={() => claimMutation.mutate(item)}
-                            disabled={isClaiming}
-                            className="h-7 text-xs font-semibold gap-1 rounded-sm border border-primary/50 text-primary hover:bg-primary hover:text-primary-foreground transition-colors shadow-none"
-                          >
-                            {isClaiming ? (
-                              <Loader2 className="size-3 animate-spin" />
-                            ) : (
-                              <UserIcon className="size-3" />
-                            )}
-                            <span>Claim</span>
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+            {/* Bottom Sentinel & Infinite Pagination Status */}
+            <div
+              ref={loadMoreRef}
+              className="flex flex-col items-center justify-center p-4 py-5 border-t border-border/80 bg-muted/20 text-xs text-muted-foreground gap-2"
+            >
+              {isFetchingNextPage ? (
+                <div className="flex items-center gap-2 text-primary font-medium">
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Loading more work items...</span>
+                </div>
+              ) : hasNextPage ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchNextPage()}
+                  className="h-8 text-xs gap-1.5 shadow-none hover:bg-accent"
+                >
+                  <span>Load more items</span>
+                </Button>
+              ) : (
+                <div className="text-[11px] text-muted-foreground/80 flex items-center gap-1.5">
+                  <CheckCircle2 className="size-3.5 text-muted-foreground" />
+                  <span>Showing all {allItems.length} loaded work items</span>
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Ample bottom space below the table */}
+      <div className="h-16 md:h-24 w-full" aria-hidden="true" />
     </div>
   )
 }
