@@ -19,6 +19,8 @@ type Config struct {
 	AppEnv           string
 	DBMaxConns       int32
 	DBConnectTimeout time.Duration
+	AllowedOrigins   []string
+	EnableDevLogin   bool
 }
 
 func Load() (Config, error) {
@@ -67,6 +69,20 @@ func load(defaultMaxConns int32) (Config, error) {
 		return Config{}, fmt.Errorf("PORT must be a port number without a host or scheme")
 	}
 
+	allowedOrigins := []string{"http://localhost:3000"}
+	if rawOrigins := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); rawOrigins != "" {
+		parts := strings.Split(rawOrigins, ",")
+		allowedOrigins = make([]string, 0, len(parts))
+		for _, part := range parts {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				allowedOrigins = append(allowedOrigins, trimmed)
+			}
+		}
+	}
+
+	enableDevLogin := !strings.EqualFold(strings.TrimSpace(appEnv), "production") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_DEV_LOGIN")), "true")
+
 	return Config{
 		DatabaseURL:      databaseURL,
 		TestDatabaseURL:  strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")),
@@ -76,6 +92,8 @@ func load(defaultMaxConns int32) (Config, error) {
 		AppEnv:           appEnv,
 		DBMaxConns:       maxConns,
 		DBConnectTimeout: connectTimeout,
+		AllowedOrigins:   allowedOrigins,
+		EnableDevLogin:   enableDevLogin,
 	}, nil
 }
 

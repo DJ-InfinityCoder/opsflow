@@ -3,7 +3,6 @@ package http
 import (
 	"log/slog"
 	stdhttp "net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,7 +21,7 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config, authS
 	router.Use(recoverer(logger))
 	router.Use(newIPRateLimiter().middleware(logger))
 	router.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000"},
+		AllowedOrigins:   cfg.AllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "If-Match", "Idempotency-Key", "X-Request-ID"},
 		ExposedHeaders:   []string{"X-Request-ID", "Idempotent-Replay"},
@@ -48,7 +47,7 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config, authS
 	mountFeedRoutes(router, authService, service.NewFeedService(pool), logger)
 	mountAnalyticsRoutes(router, authService, service.NewAnalyticsService(pool), logger)
 	mountAdminRoutes(router, authService, service.NewAdminService(pool), logger)
-	mountAuthRoutes(router, authService, !strings.EqualFold(strings.TrimSpace(cfg.AppEnv), "production"), logger)
+	mountAuthRoutes(router, authService, cfg.EnableDevLogin, logger)
 
 	return router
 }

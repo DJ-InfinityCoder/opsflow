@@ -342,7 +342,7 @@ function DashboardContent() {
   const selectedTeam = memberships.find((m) => m.team_id === currentTeam)
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex min-h-full flex-col gap-4 pb-12">
       {/* Header and View Tabs */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -654,7 +654,7 @@ function DashboardContent() {
           >
             <div
               style={{
-                height: `${virtualizer.getTotalSize()}px`,
+                height: `${virtualizer.getTotalSize() + 56}px`,
                 width: "100%",
                 position: "relative",
               }}
