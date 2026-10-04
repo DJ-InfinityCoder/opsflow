@@ -22,6 +22,13 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config, authS
 	router.Use(recoverer(logger))
 	router.Use(newIPRateLimiter().middleware(logger))
 	router.Use(cors.Handler(cors.Options{
+		AllowedOrigins: []string{
+			"http://localhost:3000",
+			"https://opsflow.dilip.website",
+			"http://opsflow.dilip.website",
+			"https://dilip.website",
+			"http://dilip.website",
+		},
 		AllowOriginFunc: func(r *stdhttp.Request, origin string) bool {
 			if origin == "" {
 				return true
