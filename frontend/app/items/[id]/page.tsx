@@ -541,8 +541,10 @@ function ItemDetailContent({
     }
   }
 
-  const insertMention = (member: TeamMember) => {
-    const mentionHandle = member.email ? member.email.split("@")[0] : member.name.replace(/\s+/g, "_")
+  const insertMention = (member: { user_id?: string; name?: string; email?: string; role?: string; user?: { name?: string; email?: string } }) => {
+    const email = member.user?.email || member.email || ""
+    const name = member.user?.name || member.name || ""
+    const mentionHandle = email ? email.split("@")[0] : (name ? name.replace(/\s+/g, "_") : "user")
     const before = commentText.slice(0, mentionPosition - (mentionQuery?.length || 0) - 1)
     const after = commentText.slice(mentionPosition)
     const nextText = `${before}@${mentionHandle} ${after}`
@@ -631,11 +633,23 @@ function ItemDetailContent({
   const filteredMentions = React.useMemo(() => {
     if (mentionQuery === null || !teamMembers) return []
     const q = mentionQuery.toLowerCase()
-    return teamMembers.filter(
-      (m) =>
-        m.name.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q)
-    )
+    return teamMembers
+      .map((m) => {
+        const name = m.user?.name || m.name || ""
+        const email = m.user?.email || m.email || ""
+        const userId = m.user?.id || m.user_id || m.name || email
+        return {
+          user_id: userId,
+          name,
+          email,
+          role: String(m.role || "member"),
+        }
+      })
+      .filter((m) => {
+        const nameMatch = m.name ? m.name.toLowerCase().includes(q) : false
+        const emailMatch = m.email ? m.email.toLowerCase().includes(q) : false
+        return nameMatch || emailMatch
+      })
   }, [mentionQuery, teamMembers])
 
   const isEligibleLead =

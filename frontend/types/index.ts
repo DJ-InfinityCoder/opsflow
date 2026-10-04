@@ -80,10 +80,16 @@ export interface TeamFieldSchema {
 }
 
 export interface TeamMember {
-  user_id: string
-  name: string
-  email: string
-  role: UserRole
+  user_id?: string
+  name?: string
+  email?: string
+  role: UserRole | string
+  user?: {
+    id: string
+    name: string
+    email: string
+    is_system_admin?: boolean
+  }
 }
 
 export interface ViewCounts {
