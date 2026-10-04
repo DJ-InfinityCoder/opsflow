@@ -150,41 +150,61 @@ export function TopBar() {
         </DropdownMenu>
       </div>
 
-      {/* Right side: New Item, Notifications, User Switcher dropdown */}
+      {/* Right side: New Item, Status, Utilities, and User Switcher */}
       <div className="flex items-center gap-2">
+        {/* Primary Action Button */}
         <Button
           size="sm"
           onClick={() => setNewItemOpen(true)}
-          className="h-8 gap-1.5 px-3 text-xs font-semibold rounded-sm border border-primary bg-primary text-primary-foreground hover:bg-primary/90 shadow-none"
+          className="h-8 gap-1.5 px-3 text-xs font-semibold rounded-sm bg-primary text-primary-foreground hover:bg-primary/90 shadow-none border border-transparent font-sans"
         >
           <Plus className="size-3.5" />
           <span className="hidden sm:inline">New Item</span>
         </Button>
 
-        <NotificationsPopover />
+        {/* Vertical divider */}
+        <div className="h-4 w-px bg-border/80 mx-0.5 hidden sm:block" />
 
+        {/* Backend API Live Status */}
         <BackendStatusIndicator />
 
+        {/* Notifications Popover */}
+        <NotificationsPopover />
+
+        {/* Theme Toggle */}
         <ThemeToggle />
 
-        {isSystemAdmin && (
-          <Badge variant="destructive" className="gap-1 text-[10px] py-0.5 h-6 hidden md:flex border border-destructive/30">
-            <ShieldAlert className="size-3" />
-            System Admin
-          </Badge>
-        )}
+        {/* Vertical divider */}
+        <div className="h-4 w-px bg-border/80 mx-0.5" />
 
+        {/* User Account / Persona Switcher */}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="gap-2 h-8 px-2 rounded-sm border border-border bg-background hover:bg-accent text-foreground font-normal" />}>
-            <Avatar className="size-5 border border-border">
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 h-8 px-2.5 rounded-sm border border-border bg-background hover:bg-accent text-foreground font-normal transition-colors"
+              />
+            }
+          >
+            <Avatar className="size-5 border border-border/80">
               <AvatarFallback className="text-[10px] font-bold bg-primary text-primary-foreground">
                 {getInitials(user?.name)}
               </AvatarFallback>
             </Avatar>
-            <div className="hidden flex-col items-start text-left sm:flex">
+            <div className="hidden sm:flex items-center gap-1.5 text-left">
               <span className="text-xs font-medium leading-none">{user?.name || "User"}</span>
+              {isSystemAdmin && (
+                <Badge
+                  variant="destructive"
+                  className="text-[9px] uppercase font-bold tracking-wider px-1 py-0 h-4 border border-destructive/30 leading-none"
+                >
+                  Admin
+                </Badge>
+              )}
             </div>
-            <ChevronDown className="size-3 opacity-50" />
+            <ChevronDown className="size-3 opacity-50 ml-0.5" />
           </DropdownMenuTrigger>
 
           <DropdownMenuContent align="end" className="w-72 border border-border bg-popover shadow-none rounded-md">

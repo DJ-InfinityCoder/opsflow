@@ -206,36 +206,36 @@ export function BackendStatusIndicator() {
   if (status === "online") {
     return (
       <div
-        className="hidden md:flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground font-medium rounded-sm hover:bg-muted/50 cursor-default"
+        className="hidden lg:flex items-center gap-1.5 px-2.5 h-8 text-xs text-muted-foreground font-medium rounded-sm border border-border/60 bg-muted/20 select-none"
         title="Backend API connected & healthy"
       >
         <span className="size-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
-        <span className="text-[10px]">API Online</span>
+        <span className="text-[11px] font-medium text-foreground/75">API Online</span>
       </div>
     )
   }
 
   if (status === "waking") {
     return (
-      <div
-        className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium rounded-sm bg-amber-500/10 cursor-pointer"
+      <button
         onClick={handleWake}
+        className="flex items-center gap-1.5 px-2.5 h-8 text-xs text-amber-600 dark:text-amber-400 font-medium rounded-sm border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-colors cursor-pointer"
         title="Waking backend..."
       >
-        <Loader2 className="size-3 animate-spin text-amber-500" />
-        <span className="text-[10px]">Waking API...</span>
-      </div>
+        <Loader2 className="size-3.5 animate-spin text-amber-500" />
+        <span className="text-[11px] font-semibold">Waking API...</span>
+      </button>
     )
   }
 
   return (
     <button
       onClick={handleWake}
-      className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium rounded-sm border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-colors cursor-pointer"
+      className="flex items-center gap-1.5 px-2.5 h-8 text-xs text-amber-600 dark:text-amber-400 font-medium rounded-sm border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-colors cursor-pointer"
       title="Backend appears to be sleeping. Click to wake."
     >
       <span className="size-2 rounded-full bg-amber-500 inline-block animate-ping" />
-      <span className="text-[10px]">Wake Backend</span>
+      <span className="text-[11px] font-semibold">Wake Backend</span>
     </button>
   )
 }
