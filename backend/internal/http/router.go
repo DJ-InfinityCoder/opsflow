@@ -3,6 +3,7 @@ package http
 import (
 	"log/slog"
 	stdhttp "net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,7 +22,29 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config, authS
 	router.Use(recoverer(logger))
 	router.Use(newIPRateLimiter().middleware(logger))
 	router.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   cfg.AllowedOrigins,
+		AllowOriginFunc: func(r *stdhttp.Request, origin string) bool {
+			if origin == "" {
+				return true
+			}
+			if strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:") {
+				return true
+			}
+			if strings.HasSuffix(origin, ".dilip.website") || origin == "https://dilip.website" || origin == "http://dilip.website" {
+				return true
+			}
+			if strings.HasSuffix(origin, ".vercel.app") {
+				return true
+			}
+			if strings.HasSuffix(origin, ".onrender.com") {
+				return true
+			}
+			for _, o := range cfg.AllowedOrigins {
+				if o == "*" || strings.EqualFold(o, origin) {
+					return true
+				}
+			}
+			return false
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "If-Match", "Idempotency-Key", "X-Request-ID"},
 		ExposedHeaders:   []string{"X-Request-ID", "Idempotent-Replay"},

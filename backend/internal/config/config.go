@@ -80,8 +80,10 @@ func load(defaultMaxConns int32) (Config, error) {
 		}
 	}
 
-	enableDevLogin := !strings.EqualFold(strings.TrimSpace(appEnv), "production") ||
-		strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_DEV_LOGIN")), "true")
+	enableDevLogin := true
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_DEV_LOGIN")), "false") {
+		enableDevLogin = false
+	}
 
 	return Config{
 		DatabaseURL:      databaseURL,
