@@ -904,25 +904,45 @@ function ItemDetailContent({
                   />
                 </div>
 
-                {/* Priority */}
+                {/* Priority & Target SLA */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="priority" className="text-xs font-semibold">
-                    Priority
-                  </Label>
-                  <select
-                    id="priority"
-                    value={draftPriority}
-                    onChange={(e) => {
-                      setDraftPriority(Number(e.target.value))
-                      handleInputChange()
-                    }}
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="1">P1 Critical (1h SLA)</option>
-                    <option value="2">P2 High (4h SLA)</option>
-                    <option value="3">P3 Medium (24h SLA)</option>
-                    <option value="4">P4 Low (72h SLA)</option>
-                  </select>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">
+                      Priority & Target SLA
+                    </Label>
+                    <span className="text-[10px] text-muted-foreground">
+                      Determines SLA deadline & incident escalation
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {[
+                      { p: 1, label: "P1 Critical", sla: "1h SLA", dot: "bg-red-500", active: "border-red-500 bg-red-500/10 ring-1 ring-red-500 text-red-700 dark:text-red-300", idle: "border-border bg-card hover:bg-muted/50 text-foreground/80" },
+                      { p: 2, label: "P2 High", sla: "4h SLA", dot: "bg-amber-500", active: "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500 text-amber-700 dark:text-amber-300", idle: "border-border bg-card hover:bg-muted/50 text-foreground/80" },
+                      { p: 3, label: "P3 Medium", sla: "24h SLA", dot: "bg-blue-500", active: "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500 text-blue-700 dark:text-blue-300", idle: "border-border bg-card hover:bg-muted/50 text-foreground/80" },
+                      { p: 4, label: "P4 Low", sla: "72h SLA", dot: "bg-zinc-500", active: "border-zinc-500 bg-zinc-500/10 ring-1 ring-zinc-500 text-zinc-700 dark:text-zinc-300", idle: "border-border bg-card hover:bg-muted/50 text-foreground/80" },
+                    ].map(({ p, label, sla, dot, active, idle }) => {
+                      const isSelected = draftPriority === p
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => {
+                            setDraftPriority(p)
+                            handleInputChange()
+                          }}
+                          className={`flex flex-col items-start p-2.5 rounded-sm border text-left transition-all cursor-pointer ${
+                            isSelected ? `${active} font-semibold` : idle
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 w-full">
+                            <span className={`size-1.5 rounded-full ${dot}`} />
+                            <span className="text-xs font-bold">{label}</span>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground mt-0.5 pl-3">{sla}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
 
                 {/* Team Custom Fields Rendered from Schema */}
