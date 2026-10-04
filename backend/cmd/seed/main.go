@@ -200,9 +200,15 @@ func run() error {
 			nil,
 		)
 		if len(rows) >= batchSize || i == seedSize-1 {
-			query := `INSERT INTO work_items (team_id, title, description, status, priority, created_by, assignee_id, custom_fields, due_at, version, created_at, updated_at, resolved_at) VALUES ` + strings.Join(rows, ",")
+			query := `WITH inserted_items AS (
+				INSERT INTO work_items (team_id, title, description, status, priority, created_by, assignee_id, custom_fields, due_at, version, created_at, updated_at, resolved_at)
+				VALUES ` + strings.Join(rows, ",") + `
+				RETURNING id, status, created_by
+			)
+			INSERT INTO approvals (item_id, requested_by)
+			SELECT id, created_by FROM inserted_items WHERE status = 'pending_approval'`
 			if _, err := pool.Exec(ctx, query, args...); err != nil {
-				return fmt.Errorf("insert work item batch: %w", err)
+				return fmt.Errorf("insert work item batch and pending approvals: %w", err)
 			}
 			rows = rows[:0]
 			args = args[:0]

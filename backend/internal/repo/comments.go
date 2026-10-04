@@ -21,11 +21,19 @@ func NewCommentRepository(db DBTX) *CommentRepository {
 func (r *CommentRepository) Insert(ctx context.Context, itemID, authorID, body string, mentions []string) (model.Comment, error) {
 	var comment model.Comment
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO comments (item_id, author_id, body, mentions)
-		VALUES ($1::uuid, $2::uuid, $3, $4::uuid[])
-		RETURNING id::text, item_id::text, author_id::text, body, mentions::text[], created_at
+		WITH ins AS (
+			INSERT INTO comments (item_id, author_id, body, mentions)
+			VALUES ($1::uuid, $2::uuid, $3, $4::uuid[])
+			RETURNING id, item_id, author_id, body, mentions, created_at
+		)
+		SELECT ins.id::text, ins.item_id::text, ins.author_id::text,
+		       coalesce(u.name, ins.author_id::text),
+		       ins.body, ins.mentions::text[], ins.created_at
+		FROM ins
+		LEFT JOIN users u ON u.id = ins.author_id
 	`, itemID, authorID, body, mentions).Scan(
-		&comment.ID, &comment.ItemID, &comment.AuthorID, &comment.Body, &comment.Mentions, &comment.CreatedAt,
+		&comment.ID, &comment.ItemID, &comment.AuthorID, &comment.AuthorName,
+		&comment.Body, &comment.Mentions, &comment.CreatedAt,
 	)
 	if err != nil {
 		return model.Comment{}, fmt.Errorf("insert comment: %w", err)
@@ -38,10 +46,13 @@ func (r *CommentRepository) Insert(ctx context.Context, itemID, authorID, body s
 
 func (r *CommentRepository) ListByItem(ctx context.Context, itemID string) ([]model.Comment, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id::text, item_id::text, author_id::text, body, mentions::text[], created_at
-		FROM comments
-		WHERE item_id = $1::uuid
-		ORDER BY created_at ASC, id ASC
+		SELECT c.id::text, c.item_id::text, c.author_id::text,
+		       coalesce(u.name, c.author_id::text),
+		       c.body, c.mentions::text[], c.created_at
+		FROM comments c
+		LEFT JOIN users u ON u.id = c.author_id
+		WHERE c.item_id = $1::uuid
+		ORDER BY c.created_at ASC, c.id ASC
 	`, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("list comments: %w", err)
@@ -51,7 +62,7 @@ func (r *CommentRepository) ListByItem(ctx context.Context, itemID string) ([]mo
 	comments := make([]model.Comment, 0)
 	for rows.Next() {
 		var c model.Comment
-		if err := rows.Scan(&c.ID, &c.ItemID, &c.AuthorID, &c.Body, &c.Mentions, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.ItemID, &c.AuthorID, &c.AuthorName, &c.Body, &c.Mentions, &c.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan comment: %w", err)
 		}
 		if c.Mentions == nil {

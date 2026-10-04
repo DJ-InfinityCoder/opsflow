@@ -56,7 +56,11 @@ func (s *ItemService) Get(ctx context.Context, user model.User, itemID string) (
 		return model.WorkItem{}, err
 	}
 	if item.Status == statemachine.StatePendingApproval {
-		if pending, _ := items.GetPendingApproval(ctx, item.ID); pending != nil {
+		pending, err := items.GetPendingApproval(ctx, item.ID)
+		if err != nil {
+			return model.WorkItem{}, err
+		}
+		if pending != nil {
 			item.PendingApproval = pending
 		}
 	}
